@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { readFile, rename, rm, writeFile } = require('node:fs/promises');
 const { join } = require('node:path');
+const { validCompanionMode } = require('./companion.cjs');
 
 const maxAvatarBytes = 64 * 1024 * 1024;
 
@@ -16,6 +17,7 @@ async function replaceFile(path, value) {
 
 function createPreferences(directory) {
   const voicePath = join(directory, 'voz.json');
+  const companionPath = join(directory, 'compania.json');
   const avatarPath = join(directory, 'avatar-personal.vrm');
 
   async function getVoice() {
@@ -31,6 +33,19 @@ function createPreferences(directory) {
     await replaceFile(voicePath, JSON.stringify(enabled));
   }
 
+  async function getCompanion() {
+    try {
+      return validCompanionMode(JSON.parse(await readFile(companionPath, 'utf8')));
+    } catch {
+      return 'off';
+    }
+  }
+
+  async function setCompanion(mode) {
+    if (validCompanionMode(mode) !== mode) throw new Error('El modo compañía no es válido.');
+    await replaceFile(companionPath, JSON.stringify(mode));
+  }
+
   async function saveAvatar(data) {
     if (!(data instanceof Uint8Array) || data.byteLength < 20 || data.byteLength > maxAvatarBytes) {
       throw new Error('El avatar debe ser un VRM de hasta 64 MB.');
@@ -43,7 +58,7 @@ function createPreferences(directory) {
     await replaceFile(avatarPath, bytes);
   }
 
-  return { avatarPath, getVoice, setVoice, saveAvatar, resetAvatar: () => rm(avatarPath, { force: true }) };
+  return { avatarPath, getVoice, setVoice, getCompanion, setCompanion, saveAvatar, resetAvatar: () => rm(avatarPath, { force: true }) };
 }
 
 module.exports = { createPreferences, replaceFile };

@@ -414,12 +414,12 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
         if (point) aimAt(point.x * window.innerWidth, point.y * window.innerHeight);
       }).catch(() => {}).finally(() => { cursorPending = false; });
     }
-    const { state, tone, reaction } = activity();
+    const { state, tone, reaction, companion } = activity();
     const focus = Math.max(0, aimTarget.normal.z) *
       (1 - 0.72 * THREE.MathUtils.clamp((seconds - lastPointerMove - 1.2) / 2, 0, 1));
     const p = motion.step(seconds, dt, state, tone, reaction, mouthLevel(), {
       x: pointer.x * focus, y: pointer.y * focus,
-    }, reducedMotion.matches);
+    }, reducedMotion.matches, companion);
     const blend = 1 - Math.exp(-dt * 9);
     const reached = applyPose(bones, p, blend, dt, seconds, resolveAim);
     gaze.position.x += (p.gazeX * height * 0.62 - gaze.position.x) * blend;

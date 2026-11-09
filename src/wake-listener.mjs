@@ -27,6 +27,7 @@ export async function watchWake(context, stream, api, callbacks) {
   let interrupting = false;
   let epoch = 0;
   let checking = false;
+  let capturingSpeech = false;
   let queued;
   let timer;
   let deadline;
@@ -37,6 +38,7 @@ export async function watchWake(context, stream, api, callbacks) {
     for (const track of tracks) track.enabled = value;
     meter.port.postMessage({ enabled, epoch: ++epoch, holdoff, interrupting });
     if (!enabled) {
+      capturingSpeech = false;
       queued = undefined;
       waiting = false;
       interrupting = false;
@@ -129,9 +131,11 @@ export async function watchWake(context, stream, api, callbacks) {
   meter.port.onmessage = ({ data }) => {
     if (!enabled || data.epoch !== epoch) return;
     if (data.started) {
+      capturingSpeech = true;
       if (waiting && deadline !== undefined && performance.now() < deadline) expireAt(deadline + speechGraceMs);
       return;
     }
+    capturingSpeech = false;
     if (checking) queued = data.samples;
     else void check(data.samples);
   };
@@ -143,6 +147,7 @@ export async function watchWake(context, stream, api, callbacks) {
   source.connect(meter).connect(context.destination);
   return {
     setEnabled, waitForCommand, listenForInterruption, cancel,
+    isChecking: () => checking || capturingSpeech,
     close() {
       setEnabled(false);
       meter.port.close();

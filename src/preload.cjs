@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('assistant', {
   ready: () => ipcRenderer.invoke('assistant:ready'),
-  chat: (text, body, avatarId, view) => ipcRenderer.invoke('assistant:chat', { text, body, avatarId, view }),
+  chat: (text, body, avatarId, view, starter) => ipcRenderer.invoke('assistant:chat', { text, body, avatarId, view, starter }),
   gestureResult: (id, performed) => ipcRenderer.invoke('assistant:gesture-result', { id, performed }),
   onReplyChunk: (callback) => ipcRenderer.on('assistant:reply-chunk', (_event, chunk) => callback(chunk)),
   speak: (text, tone) => ipcRenderer.invoke('assistant:speak', { text, tone }),
@@ -21,11 +21,14 @@ contextBridge.exposeInMainWorld('assistant', {
   saveProfile: (text) => ipcRenderer.invoke('profile:save', text),
   getVoice: () => ipcRenderer.invoke('preferences:get-voice'),
   setVoice: (enabled) => ipcRenderer.invoke('preferences:set-voice', enabled),
+  getCompanion: () => ipcRenderer.invoke('preferences:get-companion'),
+  setCompanion: (mode) => ipcRenderer.invoke('preferences:set-companion', mode),
   hasAvatar: () => ipcRenderer.invoke('preferences:has-avatar'),
   saveAvatar: (data) => ipcRenderer.invoke('preferences:save-avatar', data),
   resetAvatar: () => ipcRenderer.invoke('preferences:reset-avatar'),
   minimize: () => ipcRenderer.invoke('window:minimize'),
   close: () => ipcRenderer.invoke('window:close'),
+  onCompanionVisibility: (callback) => ipcRenderer.on('window:companion-visible', (_event, visible) => callback(visible)),
   pointer: () => ipcRenderer.invoke('window:pointer'),
   passThrough: () => ipcRenderer.invoke('window:pass-through'),
   onPassThrough: (callback) => ipcRenderer.on('window:pass-through', (_event, enabled) => callback(enabled)),

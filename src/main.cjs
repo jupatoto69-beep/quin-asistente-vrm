@@ -139,6 +139,12 @@ async function createWindow() {
     },
   });
   const web = window.webContents;
+  for (const event of ['minimize', 'hide']) {
+    window.on(event, () => web.send('window:companion-visible', false));
+  }
+  for (const event of ['restore', 'show']) {
+    window.on(event, () => web.send('window:companion-visible', true));
+  }
   web.on('will-navigate', (event) => event.preventDefault());
   web.on('will-attach-webview', (event) => event.preventDefault());
   web.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -184,7 +190,7 @@ if (!app.requestSingleInstanceLock()) {
     addHandler('assistant:ready', () => services.ready);
     addHandler('assistant:chat', (input, sender) => onlyOne(() => services.chat(validText(input?.text, 1200), (chunk) => {
       if (!sender.isDestroyed()) sender.send('assistant:reply-chunk', chunk);
-    }, Array.isArray(input?.body) ? input.body : [], appearanceCatalog.current(input?.avatarId), input?.view)));
+    }, Array.isArray(input?.body) ? input.body : [], appearanceCatalog.current(input?.avatarId), input?.view, input?.starter)));
     addHandler('assistant:gesture-result', (input) => onlyOne(() => services.confirmGesture(input?.id, input?.performed)));
     addHandler('assistant:speak', (input) => withSpeech((signal) => services.speak(validText(input?.text, 2500), input?.tone, signal)));
     addHandler('assistant:speak-stream', (input, sender) => withSpeech(async (signal) => {
@@ -237,6 +243,8 @@ if (!app.requestSingleInstanceLock()) {
     addHandler('profile:get', personalProfile.get);
     addHandler('profile:save', (text) => onlyOne(() => personalProfile.save(text)));
     addHandler('preferences:get-voice', preferences.getVoice);
+    addHandler('preferences:get-companion', preferences.getCompanion);
+    addHandler('preferences:set-companion', preferences.setCompanion);
     addHandler('preferences:set-voice', async (enabled) => {
       await preferences.setVoice(enabled);
       if (enabled) services.warmConversation();

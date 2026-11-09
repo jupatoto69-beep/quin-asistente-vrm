@@ -5,6 +5,7 @@ import { initializeMemoryPanel } from './memory-panel.mjs';
 import { initializeProfilePanel } from './profile-panel.mjs';
 import { handCue } from './hand-cues.cjs';
 import { containsInterruption, watchWake } from './wake-listener.mjs';
+import { createCompanion } from './companion.cjs';
 
 const api = window.assistant;
 initializeProfilePanel(api);
@@ -16,6 +17,7 @@ const mic = byId('mic');
 const send = byId('send');
 const voice = byId('voice');
 const wake = byId('wake');
+const companionMode = byId('companion');
 const messages = byId('messages');
 const file = byId('file');
 const pick = byId('pick');
@@ -61,6 +63,10 @@ let speakingReaction;
 let voicePacket;
 let activeSpeech;
 let pendingCorrection;
+const companion = createCompanion();
+let companionInterval;
+let companionPrompt;
+let companionVisible = true;
 
 function canSend() {
   return ready.chat && (state === 'idle' || (state === 'listening' && pendingCorrection));
@@ -68,6 +74,7 @@ function canSend() {
 
 function update(next) {
   state = next;
+  if (state !== 'idle') companion.pause();
   document.body.dataset.state = state;
   let label = state === 'idle' && !ready.chat ? 'Falta preparar Ollama y Qwen3' : labels[state];
   if (state === 'idle' && wake.checked && wakeListener) label = 'Activa · di «Hey, Quin»';
@@ -245,13 +252,16 @@ async function speak(text, tone, preview = false, signal) {
 
 async function answer(text, request) {
   const view = avatar?.observeBody();
+  const starter = companionPrompt;
+  companionPrompt = undefined;
+  companion.answered();
   update('thinking');
   const userText = addMessage('Tú', text);
   let reply;
   let replyRow;
   let acted = false;
   try {
-    reply = await api.chat(request, avatar?.capabilities(), avatarId, view);
+    reply = await api.chat(request, avatar?.capabilities(), avatarId, view, starter);
     if (reply.action) {
       update('gesturing');
       const performed = await avatar?.gesture(reply.action) ?? false;
@@ -271,8 +281,12 @@ async function answer(text, request) {
   }
   const cue = acted ? null : handCue(text, reply.text);
   if (cue) avatar?.gesture(cue);
-  if (voice.checked && ready.speak) {
-    const speech = activeSpeech = { controller: new AbortController(), text: reply.text, id: reply.memoryId, row: replyRow };
+  return deliverReply(reply, replyRow);
+}
+
+async function deliverReply(reply, row, proactive = false) {
+  if (voice.checked && ready.speak && (!proactive || reply.speaks)) {
+    const speech = activeSpeech = { controller: new AbortController(), text: reply.text, id: reply.memoryId, row, proactive };
     try {
       await speak(reply.text, reply.tone, false, speech.controller.signal);
     } catch (error) {
@@ -289,6 +303,60 @@ async function answer(text, request) {
     avatar?.reply(reply.tone, speechReaction(speechText(reply.text)));
   }
 }
+
+async function companionTick() {
+  const available = ready.chat && !!avatarId && state === 'idle' && !wakeArmed && !pendingCorrection &&
+    companionVisible && !document.hidden && !prompt.value.trim() &&
+    !document.querySelector('dialog[open]') && !wakeListener?.isChecking();
+  const line = companion.tick(performance.now(), available);
+  if (!line) return;
+  companionPrompt = line.id;
+  const row = addMessage('Quin', line.text, 'companion-message').parentElement;
+  const plays = line.speaks && voice.checked && ready.speak;
+  let interrupted;
+  try {
+    interrupted = await deliverReply(line, row, true);
+  } catch (error) {
+    report(error);
+  }
+  if (plays) update('idle');
+  if (interrupted?.addition) await answerInput(interrupted.addition);
+}
+
+function setCompanionMode(mode) {
+  clearInterval(companionInterval);
+  companionMode.value = mode;
+  companion.setMode(mode);
+  if (mode !== 'off') companionInterval = setInterval(companionTick, 2000);
+}
+
+companionMode.addEventListener('change', async () => {
+  const mode = companionMode.value;
+  if (activeSpeech?.proactive && mode !== 'chatty') interruptReply();
+  companionMode.disabled = true;
+  const previous = companionMode.dataset.saved;
+  setCompanionMode(mode);
+  try {
+    await api.setCompanion(mode);
+    companionMode.dataset.saved = mode;
+  } catch {
+    setCompanionMode(previous);
+    report(new Error('No se pudo guardar el modo compañía.'));
+  } finally {
+    companionMode.disabled = false;
+  }
+});
+
+prompt.addEventListener('input', () => companion.pause());
+function pauseOnVisibilityChange() {
+  companion.pause();
+  if ((!companionVisible || document.hidden) && activeSpeech?.proactive) interruptReply();
+}
+document.addEventListener('visibilitychange', pauseOnVisibilityChange);
+api.onCompanionVisibility((visible) => {
+  companionVisible = visible;
+  pauseOnVisibilityChange();
+});
 
 function interruptReply(addition = '') {
   const speech = activeSpeech;
@@ -327,7 +395,10 @@ api.onReplyChunk((chunk) => {
 
 voice.addEventListener('change', async () => {
   const enabled = voice.checked;
-  if (!enabled) wakePlayback?.stop();
+  if (!enabled) {
+    wakePlayback?.stop();
+    if (activeSpeech?.proactive) interruptReply();
+  }
   voice.disabled = true;
   try {
     await api.setVoice(enabled);
@@ -582,8 +653,11 @@ resetAvatar.addEventListener('click', async () => {
 });
 
 async function initialize() {
-  const [available, voiceEnabled, hasAvatar] = await Promise.all([api.ready(), api.getVoice(), api.hasAvatar()]);
+  const [available, voiceEnabled, hasAvatar, mode] = await Promise.all([api.ready(), api.getVoice(), api.hasAvatar(), api.getCompanion()]);
   ready = available;
+  setCompanionMode(mode);
+  companionMode.dataset.saved = mode;
+  companionMode.disabled = false;
   if (ready.memory) initializeMemoryPanel(api, messages);
   else report(new Error('La memoria local no se pudo abrir. Este chat se recuerda mientras la ventana siga abierta.'));
   voice.disabled = !ready.speak;
@@ -597,7 +671,7 @@ async function initialize() {
   }
   try {
     avatar = createAvatar(stage, () => ({
-      state, tone: speakingTone, reaction: speakingReaction,
+      state, tone: speakingTone, reaction: speakingReaction, companion: companionMode.value,
     }), mouthLevel, api.pointer, controlPosition);
     if (hasAvatar) {
       resetAvatar.hidden = false;

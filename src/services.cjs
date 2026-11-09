@@ -15,6 +15,7 @@ const { decodeBody, bodyKinds, parts, directions, intensities, tempos } = requir
 const { bodyIntent, otherSide, asksBodyContext, readBodyView, reportBody, views } = require('./body-awareness.cjs');
 const { cleanNote, invitesFollowUp, socialIntent } = require('./social-memory.cjs');
 const { appearanceTopic, appearanceUpdate, maxDescription } = require('./appearance.cjs');
+const { companionStarter } = require('./companion.cjs');
 const delivery = require('./voice-delivery.json');
 
 const port = 11485;
@@ -435,7 +436,7 @@ function createServices(root, memory, profile) {
     }
   }
 
-  async function chat(prompt, onChunk, body = [], appearance, avatarView) {
+  async function chat(prompt, onChunk, body = [], appearance, avatarView, starterId) {
     pendingGesture = undefined;
     if (bodyAvatarId !== appearance?.id) {
       bodyAvatarId = appearance?.id;
@@ -558,6 +559,11 @@ function createServices(root, memory, profile) {
       memoryWarning ||= 'No se pudo consultar la memoria de charla para esta respuesta.';
     }
     instructions += '\n' + responseStyle;
+    const starter = companionStarter(starterId);
+    if (starter) {
+      instructions += '\nLo último que le dijiste al usuario para abrir una charla fue ' + JSON.stringify(starter.text) +
+        '. Si su mensaje contesta a esa pregunta, sigue el hilo directamente.';
+    }
     if (view && asksBodyContext(plainWords(prompt))) {
       const facts = [reportBody('pose', view), reportBody('view', view)];
       if (lastGesture) facts.push('Último gesto solicitado y confirmado: ' + reportBody('lastGesture', view, lastGesture));

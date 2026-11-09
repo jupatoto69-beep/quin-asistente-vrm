@@ -1,11 +1,11 @@
-# Quin · v0.9.0
+# Quin · v0.10.0
 
 Quin es mi asistente de escritorio para Windows con avatar VRM y conversación local en español.
 
-## Interrupciones y conciencia corporal
+## Modo compañía
 
-- Se puede cortar la voz y añadir una corrección conservando la pregunta anterior. El historial marca la respuesta interrumpida.
-- Quin puede describir su postura y encuadre, mostrar partes de su cuerpo y recordar qué lado acaba de mover.
+- Añadí los ritmos Tranquila y Conversadora para las animaciones y las ocurrencias espontáneas.
+- El modo deja espacio mientras hay una conversación, un borrador o un panel abierto, y se pausa al minimizar.
 
 ## Instalación
 

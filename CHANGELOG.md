@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.10.0 · Modo compañía
+
+- Añadí los ritmos Tranquila y Conversadora para las animaciones y las ocurrencias espontáneas.
+- El modo deja espacio mientras hay una conversación, un borrador o un panel abierto, y se pausa al minimizar.
+
 ## v0.9.0 · Interrupciones y conciencia corporal
 
 - Se puede cortar la voz y añadir una corrección conservando la pregunta anterior. El historial marca la respuesta interrumpida.

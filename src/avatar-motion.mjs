@@ -1,6 +1,11 @@
 import { dance, moveBody, strengthFor } from './avatar-body-moves.mjs';
 
 const idleGestures = ['hair', 'stretch', 'weightShift', 'glance', 'curiosity', 'oops'];
+const idleStyles = {
+  off: { gestures: idleGestures, wait: 3.2, variation: 2.1, strength: 1 },
+  quiet: { gestures: ['hair', 'weightShift', 'glance', 'curiosity'], wait: 6.5, variation: 4.5, strength: 0.68 },
+  chatty: { gestures: [...idleGestures, 'ponder', 'wave'], wait: 2.4, variation: 2, strength: 1 },
+};
 const tapGestures = ['wave', 'hair', 'curiosity', 'oops'];
 const thinkingStates = new Set(['transcribing', 'thinking', 'responding', 'preparing']);
 const reachingGestures = new Set(['point', 'thumb', 'raise', 'hair', 'stretch', 'leg', 'arm', 'dance']);
@@ -196,6 +201,7 @@ export function createMotion(random = Math.random) {
   let nextStance = 3.5;
   let stance = 0;
   let idleDeck = random() < 0.5 ? ['hair', 'stretch'] : ['stretch', 'hair'];
+  let idleStyle = idleStyles.off;
   let lastGesture;
   let active;
   let tapPending = false;
@@ -221,16 +227,27 @@ export function createMotion(random = Math.random) {
   }
 
   function chooseIdle() {
-    if (!idleDeck.length) idleDeck = [...idleGestures];
+    if (!idleDeck.length) idleDeck = [...idleStyle.gestures];
     const choices = idleDeck.filter((name) => name !== lastGesture);
     const candidates = choices.length ? choices : idleDeck;
     const name = candidates[Math.floor(random() * candidates.length)];
     idleDeck.splice(idleDeck.indexOf(name), 1);
     start(name);
+    active.ambient = true;
   }
 
-  function step(now, dt, state, tone, reaction, level, pointer, reduced) {
+  function idleDelay() {
+    return idleStyle.wait + random() * idleStyle.variation;
+  }
+
+  function step(now, dt, state, tone, reaction, level, pointer, reduced, companion = 'off') {
     time = now;
+    const style = idleStyles[companion] ?? idleStyles.off;
+    if (idleStyle !== style) {
+      idleStyle = style;
+      idleDeck = [];
+      if (mode === 'idle') nextMove = now + idleDelay();
+    }
     const next = state === 'speaking' ? 'speaking'
       : state === 'listening' || state === 'opening' ? 'listening'
       : thinkingStates.has(state) ? 'thinking'
@@ -240,7 +257,7 @@ export function createMotion(random = Math.random) {
       mode = next;
       since = now;
       if (!keepGesture) clearGesture();
-      nextMove = now + (mode === 'idle' ? 3.2 + random() * 2.1 : 0.30);
+      nextMove = now + (mode === 'idle' ? idleDelay() : 0.30);
       if (mode === 'listening') start('nod');
       if (mode === 'thinking' && !keepGesture) start('ponder');
     }
@@ -271,7 +288,7 @@ export function createMotion(random = Math.random) {
     if (!active && now >= nextMove) {
       if (mode === 'idle') {
         chooseIdle();
-        nextMove = now + gestures[active.name].duration + 3.0 + random() * 3.0;
+        nextMove = now + gestures[active.name].duration + (idleStyle === idleStyles.off ? 3.0 + random() * 3.0 : idleDelay());
       } else if (engaged && (level > 0.08 || mode === 'reply')) {
         choose(mood.gestures);
         nextMove = now + 2.3 + random() * 1.8;
@@ -348,7 +365,7 @@ export function createMotion(random = Math.random) {
       const phase = (now - active.at) / gesture.duration;
       const ramp = gesture.ramp ?? 0.35;
       const envelope = gesture.hold ? ease(Math.min(phase / ramp, (1 - phase) / ramp)) : Math.sin(phase * Math.PI) ** 2;
-      const amount = envelope * (reduced ? 0.25 : 1);
+      const amount = envelope * (reduced ? 0.25 : 1) * (active.ambient ? idleStyle.strength : 1);
       if (gesture.arms) p.armGesture = amount;
       gesture.move(p, amount, phase, active.side, active.target, active.plan);
     }
