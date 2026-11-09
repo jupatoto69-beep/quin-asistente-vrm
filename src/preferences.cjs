@@ -46,4 +46,4 @@ function createPreferences(directory) {
   return { avatarPath, getVoice, setVoice, saveAvatar, resetAvatar: () => rm(avatarPath, { force: true }) };
 }
 
-module.exports = { createPreferences };
+module.exports = { createPreferences, replaceFile };

@@ -48,10 +48,10 @@ def main():
         reference = model.build_prompt_cache(reference_wav_path=str(args.reference.resolve()))
     print(f"Modelo de emociones cargado en {time.perf_counter() - started:.1f} s", flush=True)
 
-    def synthesize(tone, text, output):
+    def synthesize(tone, text, output, control=None):
         started = time.perf_counter()
         # The supplied audio anchors the speaker. The parenthetical text directs only the delivery.
-        instruction = f"{DELIVERY['tones'][tone]} {DELIVERY['reference']}"
+        instruction = control or f"{DELIVERY['tones'][tone]} {DELIVERY['reference']}"
         torch.manual_seed(306)
         audio, _, _ = model.generate_with_prompt_cache(
             target_text=f"({instruction}){' '.join(text.split())}",
@@ -73,7 +73,7 @@ def main():
         for line in sys.stdin:
             try:
                 job = json.loads(line)
-                synthesize(job["tone"], job["text"], job["output"])
+                synthesize(job["tone"], job["text"], job["output"], job.get("control"))
             except Exception as error:
                 print(type(error).__name__, file=sys.stderr, flush=True)
                 print("VRM_ERROR", flush=True)

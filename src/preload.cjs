@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('assistant', {
   listMemory: (query, before) => ipcRenderer.invoke('memory:list', { query, before }),
   removeMemory: (id) => ipcRenderer.invoke('memory:remove', id),
   clearMemory: () => ipcRenderer.invoke('memory:clear'),
+  getProfile: () => ipcRenderer.invoke('profile:get'),
+  saveProfile: (text) => ipcRenderer.invoke('profile:save', text),
   getVoice: () => ipcRenderer.invoke('preferences:get-voice'),
   setVoice: (enabled) => ipcRenderer.invoke('preferences:set-voice', enabled),
   hasAvatar: () => ipcRenderer.invoke('preferences:has-avatar'),

@@ -29,7 +29,7 @@ export function initializeMemoryPanel(api, messages) {
     const timestamp = document.createElement('time');
     timestamp.textContent = date.format(entry.saved_at);
     article.append(timestamp);
-    for (const [label, text] of [['Tú', entry.question], ['Pícara', entry.answer]]) {
+    for (const [label, text] of [['Tú', entry.question], ['Quin', entry.answer]]) {
       const paragraph = document.createElement('p');
       const author = document.createElement('strong');
       author.textContent = label + ' · ';

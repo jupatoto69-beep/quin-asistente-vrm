@@ -124,6 +124,20 @@ dialog::backdrop { background: #130b20aa; }
 .memory-item time { color: var(--muted); font-size: 11px; }
 .memory-actions { justify-content: space-between; margin-top: 8px; }
 #memory-clear { margin-left: auto; }
+#profile-text {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: min(300px, 48vh);
+  resize: none;
+  padding: 8px;
+  border: 1px solid #624e84;
+  border-radius: 7px;
+  background: #161024;
+  color: inherit;
+  font: inherit;
+}
+#profile-status { color: var(--muted); }
 button { cursor: pointer; }
 button:hover:not(:disabled) { background: #4a3567; }
 button:disabled { opacity: .48; cursor: default; }

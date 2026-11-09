@@ -44,13 +44,13 @@ function createVoiceWorker(python, script, args) {
     return process;
   }
 
-  function speak(text, tone, output) {
+  function speak(text, tone, output, control) {
     if (pending) throw new Error('Ya hay una solicitud de voz en curso.');
     clearTimeout(idle);
     child ??= start();
     return new Promise((resolve, reject) => {
       pending = { resolve, reject, timer: setTimeout(stop, 100_000) };
-      child.stdin.write(JSON.stringify({ text, tone, output }) + '\n');
+      child.stdin.write(JSON.stringify({ text, tone, output, control }) + '\n');
     });
   }
 

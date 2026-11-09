@@ -2,11 +2,16 @@
   "reference": "Keep the reference speaker's timbre and Latin American Spanish accent.",
   "tones": {
     "dulce": "Warm, soft and affectionate. A little smile and gentle pauses.",
-    "picara": "Playful, lightly teasing and witty. A brief pause before the punchline.",
-    "seria": "Calm, direct and matter-of-fact. Even pace and a clear emphasis on the key words.",
+    "picara": "Warm, softly flirtatious and teasing, like sharing a private joke. A slightly lower register, relaxed pacing and an audible smile. Pause briefly before the tease. Speak clearly at conversational volume without whispering.",
+    "seria": "Neutral, understated conversational speech. A steady middle-low register, small pitch changes and gently falling endings. Even tempo, clear words and short natural pauses. Keep any interjection brief and dry.",
     "feliz": "Genuinely delighted, smiling broadly, bright lively intonation and energized pacing.",
     "triste": "Clearly sad and subdued, slightly breathy, slower with a small pause and a falling ending.",
     "enojada": "Clearly irritated and firm, focused, clipped articulation and pointed emphasis, without shouting.",
     "timida": "Shy and slightly nervous, quiet with gentle hesitations, a small pause and an uncertain rise."
+  },
+  "reactions": {
+    "laugh": "Make the written laugh a brief, soft natural chuckle. Resume the selected speaking tone immediately.",
+    "sigh": "Give the short interjection the breath and falling pitch of a quiet sigh or a restrained grumble. Continue in the selected tone.",
+    "surprise": "Give the short interjection a quick, gentle lift of surprise. Continue in the selected tone."
   }
 }

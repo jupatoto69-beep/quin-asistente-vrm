@@ -1,9 +1,11 @@
 import { createAvatar } from './avatar.mjs';
 import { createStreamPlayer, record, toWhisperWav } from './audio.mjs';
-import { tones, validTone } from './voice.cjs';
+import { tones, liveSamples, validTone } from './voice.cjs';
 import { initializeMemoryPanel } from './memory-panel.mjs';
+import { initializeProfilePanel } from './profile-panel.mjs';
 
 const api = window.assistant;
+initializeProfilePanel(api);
 const byId = (id) => document.getElementById(id);
 const stage = byId('stage');
 const avatarNote = byId('avatar-note');
@@ -153,15 +155,16 @@ async function speak(text, tone, preview = false) {
   update('preparing');
   try {
     await unlockAudio();
-    if (preview && ready.voiceSamples) {
+    if (preview && !liveSamples.has(tone) && ready.voiceSamples) {
       const response = await fetch(`/muestra-${tone}.wav`);
       if (!response.ok) throw new Error('No se pudo abrir la muestra de voz.');
       await play(new Uint8Array(await response.arrayBuffer()), speakingTone);
-    } else if (!preview && ready.voiceStream) {
+    } else if (ready.voiceStream) {
       const fallback = await playStream(text, tone);
       if (fallback) await play(fallback, speakingTone);
     } else {
-      await play(await api.speak(text, tone), speakingTone);
+      const wav = await api.speak(text, tone);
+      if (wav) await play(wav, speakingTone);
     }
   } finally {
     speakingTone = undefined;
@@ -175,7 +178,7 @@ async function answer(text) {
   try {
     reply = await api.chat(text);
     if (replyText) replyText.data = reply.text;
-    else replyText = addMessage('Asistente', reply.text);
+    else replyText = addMessage('Quin', reply.text);
     if (reply.memoryId && userText.parentElement && replyText.parentElement) {
       userText.parentElement.dataset.memoryId = reply.memoryId;
       replyText.parentElement.dataset.memoryId = reply.memoryId;
@@ -205,7 +208,7 @@ for (const button of toneButtons) {
 
 api.onReplyChunk((chunk) => {
   if (state === 'thinking') {
-    replyText = addMessage('Asistente', chunk);
+    replyText = addMessage('Quin', chunk);
     update('responding');
   } else if (state === 'responding' && replyText) {
     replyText.appendData(chunk);

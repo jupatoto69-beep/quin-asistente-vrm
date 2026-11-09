@@ -4,7 +4,8 @@ const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createServices } = require('./services.cjs');
 const { createPreferences } = require('./preferences.cjs');
-const { tones } = require('./voice.cjs');
+const { createProfile } = require('./profile.cjs');
+const { tones, liveSamples } = require('./voice.cjs');
 
 const root = join(__dirname, '..');
 const origin = 'app://asistente';
@@ -17,6 +18,7 @@ const resources = new Map([
   ['/avatar.vrm', 'assets/avatar.vrm'],
 ]);
 for (const tone of Object.keys(tones)) {
+  if (liveSamples.has(tone)) continue;
   resources.set(`/muestra-${tone}.wav`, `.local/voice-preview/voz-joven-${tone}.wav`);
 }
 
@@ -25,6 +27,7 @@ protocol.registerSchemesAsPrivileged([{
 }]);
 app.setPath('userData', join(root, '.local', 'profile'));
 const preferences = createPreferences(app.getPath('userData'));
+const personalProfile = createProfile(app.getPath('userData'));
 
 let window;
 let services;
@@ -96,7 +99,7 @@ async function createWindow() {
   } catch (error) {
     console.warn('No se pudo iniciar la memoria local.', error.code);
   }
-  services = createServices(root, memory);
+  services = createServices(root, memory, personalProfile);
   const work = screen.getPrimaryDisplay().workArea;
   const width = Math.min(408, work.width);
   const height = Math.min(730, work.height);
@@ -177,6 +180,8 @@ if (!app.requestSingleInstanceLock()) {
     });
     addHandler('memory:remove', (id) => onlyOne(() => { requireMemory().remove(validMemoryId(id)); }));
     addHandler('memory:clear', () => onlyOne(() => { requireMemory().clear(); }));
+    addHandler('profile:get', personalProfile.get);
+    addHandler('profile:save', (text) => onlyOne(() => personalProfile.save(text)));
     addHandler('preferences:get-voice', preferences.getVoice);
     addHandler('preferences:set-voice', async (enabled) => {
       await preferences.setVoice(enabled);

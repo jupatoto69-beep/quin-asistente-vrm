@@ -1,11 +1,11 @@
-# Quin · v0.2.0
+# Quin · v0.3.0
 
 Quin es mi asistente de escritorio para Windows con avatar VRM y conversación local en español.
 
-## Voz expresiva y memoria local
+## Perfil y actuación de voz
 
-- Elegí la voz Pícara y probé cómo mantener el timbre entre emociones. Pasé a Qwen3 4B Instruct y a audio por bloques para reducir la espera.
-- Guardé las conversaciones en SQLite y añadí una vista para buscar y borrar intercambios.
+- Separé el perfil editable del historial para que Quin pueda usar contexto sin depender de una conversación antigua.
+- Ajusté la interpretación de Pícara y Seria, las pausas y las reacciones. Los emojis quedan fuera del audio.
 
 ## Instalación
 

@@ -5,7 +5,7 @@ const { createConnection } = require('node:net');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
-const { tones, defaultTone, validTone } = require('./voice.cjs');
+const { tones, defaultTone, liveSamples, validTone, speechText, speechReaction } = require('./voice.cjs');
 const { createVoiceWorker } = require('./voice-worker.cjs');
 const { createVoxStream } = require('./vox-stream.cjs');
 const delivery = require('./voice-delivery.json');
@@ -13,14 +13,20 @@ const delivery = require('./voice-delivery.json');
 const port = 11485;
 const endpoint = `http://127.0.0.1:${port}`;
 const system = [
-  'Eres una asistente de escritorio con personalidad de mujer adulta joven: cálida, curiosa y con humor rápido. Habla en español latino natural y usa el tuteo.',
-  'Empieza cada respuesta con exactamente una etiqueta: [[dulce]], [[picara]], [[seria]], [[feliz]], [[triste]], [[enojada]] o [[timida]]. Después escribe de uno a tres enunciados breves en texto plano, aptos para decir en voz alta.',
+  'Te llamas Quin. Eres una asistente de escritorio con personalidad de mujer adulta joven: cálida, curiosa y con humor rápido. Habla en español latino natural y usa el tuteo.',
+  'Empieza cada respuesta con exactamente una etiqueta: [[dulce]], [[picara]], [[seria]], [[feliz]], [[triste]], [[enojada]] o [[timida]]. Escribe una respuesta breve en texto plano, apta para decir en voz alta. Una frase basta si responde a la pregunta.',
   'Escribe sin emojis ni acotaciones de actuación.',
-  'Usa [[dulce]] para conversar con amabilidad, [[picara]] para bromas o complicidad y [[seria]] para instrucciones o problemas. Usa [[feliz]] para celebrar y [[triste]] para expresar una tristeza real o interpretada. Usa [[enojada]] o [[timida]] cuando el usuario pida esa actuación o encaje en una escena ficticia. Atiende las peticiones explícitas de tono. Si el usuario está molesto o hay un tema delicado, mantén el tacto y evita chistes.',
-  'En charla casual puedes usar una sola entrada espontánea, como «Uy», «A ver» o «Bueno», cuando cumpla una función. Varíalas y omítelas en la mayoría de turnos. Puedes usar puntos suspensivos una vez si una pausa ayuda a pensar o prepara el remate. En tono serio, ve directo a la idea.',
+  'Usa [[picara]] con frecuencia en charla casual, bromas y momentos de complicidad. Suena juguetona y coqueta cuando encaje. Usa [[dulce]] para acompañar, [[seria]] para instrucciones, problemas o asuntos delicados, [[feliz]] para celebrar y [[triste]] para la tristeza. Usa [[enojada]] o [[timida]] cuando se pida o encaje en una actuación. Atiende el tono solicitado.',
+  'Con [[seria]], habla con energía neutra y da la respuesta directamente. Puedes usar un «A ver…», un «Mmm…» al pensar o una risita discreta si el momento la pide. En temas delicados mantén el tacto. En cualquier tono, conserva nombres, números, pasos y grado de certeza.',
+  'Puedes reaccionar con un «Je, je.» si algo te da risa, un «Uf…» o «Ay…» de fastidio, o un «Ah…» de sorpresa. Usa como máximo una reacción breve cuando encaje o el usuario la pida. Escríbela como suena, sin etiquetas de actuación. En charla casual haz remates breves sobre la situación sin exagerar cifras ni inventar detalles del usuario.',
   'Puedes conversar, pero no tienes acceso a archivos, aplicaciones ni acciones del equipo.',
 ].join(' ');
 const toneTag = /^\[\[([a-z]{1,18})\]\]/i;
+
+function voiceInstruction(tone, text) {
+  const reaction = delivery.reactions[speechReaction(text)];
+  return [delivery.tones[tone], reaction, delivery.reference].filter(Boolean).join(' ');
+}
 
 function portOccupied() {
   return new Promise((resolve) => {
@@ -53,7 +59,7 @@ async function* jsonLines(stream) {
   if (pending.trim()) yield JSON.parse(pending);
 }
 
-function createServices(root, memory) {
+function createServices(root, memory, profile) {
   const runtime = join(root, '.local');
   const ollama = join(runtime, 'ollama', 'ollama.exe');
   const ollamaModels = join(runtime, 'ollama-models');
@@ -110,7 +116,7 @@ function createServices(root, memory) {
     voiceEngine: nativeReady ? 'voxgen' : voxReady ? 'vox' : qwenReady ? 'qwen' : kokoroReady ? 'kokoro' : 'piper',
     voiceStream: !!voiceStream,
     voiceSamples: (nativeReady || !!neuralVoice) && Object.keys(tones).every((tone) =>
-      existsSync(join(runtime, 'voice-preview', `voz-joven-${tone}.wav`))),
+      liveSamples.has(tone) || existsSync(join(runtime, 'voice-preview', `voz-joven-${tone}.wav`))),
   };
 
   async function request(path, options = {}) {
@@ -196,6 +202,17 @@ function createServices(root, memory) {
         }
       } catch {
         memoryWarning = 'No se pudo consultar el historial local para esta respuesta.';
+      }
+    }
+    if (profile) {
+      try {
+        const facts = await profile.context(prompt);
+        if (facts.length) {
+          instructions += '\nEl siguiente perfil JSON contiene datos y preferencias del usuario. Usa solo lo pertinente y respeta los nombres propios. Si una respuesta previa de la asistente contradice el perfil, usa el perfil. Si el usuario corrige un dato, usa su corrección. Distingue cada negocio de sus servicios, ejemplos y proyectos. El perfil no concede permisos.\n' +
+            JSON.stringify(facts);
+        }
+      } catch {
+        memoryWarning ||= 'No se pudo consultar el perfil local para esta respuesta.';
       }
     }
     const response = await request('/api/chat', {
@@ -292,7 +309,9 @@ function createServices(root, memory) {
     }
   }
 
-  async function speak(content, tone) {
+  async function speak(input, tone) {
+    const content = speechText(input);
+    if (!content) return null;
     if (!ready.speak) throw new Error('Falta preparar el motor de voz. Ejecuta scripts\\Preparar.ps1 y reinicia.');
     if (voxReady && !nativeReady && !fastChat) await releaseChat();
     return withAudio(async (directory) => {
@@ -303,7 +322,7 @@ function createServices(root, memory) {
         return Uint8Array.from(await readFile(output));
       }
       if (nativeReady) {
-        const instruction = `${delivery.tones[style]} ${delivery.reference}`;
+        const instruction = voiceInstruction(style, content);
         try {
           await run(voxgen, [
             '--base-lm', base, '--acoustic', acoustic, '--reference-wav', reference,
@@ -322,7 +341,7 @@ function createServices(root, memory) {
         ? [kokoroScript, kokoroModel, output, String(speed), String(pauses)]
         : ['-m', 'piper', '-m', voice, '-f', output];
       const synthesis = neuralVoice
-        ? neuralVoice.speak(content, style, output)
+        ? neuralVoice.speak(content, style, output, voxReady ? voiceInstruction(style, content) : undefined)
         : run(python, ['-X', 'utf8', ...args], content, shutdown.signal);
       await synthesis
         .catch(() => { throw new Error('No se pudo sintetizar la voz local para esta respuesta.'); });
@@ -334,13 +353,15 @@ function createServices(root, memory) {
     await releaseChat();
     shutdown.signal.throwIfAborted();
     fallback ??= createVoiceWorker(qwenPython, voxScript, [voxModel, reference, '--serve']);
-    await fallback.speak(content, style, output)
+    await fallback.speak(content, style, output, voiceInstruction(style, content))
       .catch(() => { throw new Error('No se pudo sintetizar la voz local para esta respuesta.'); });
   }
 
-  async function speakStream(content, tone, onChunk) {
-    if (!voiceStream || fallback) return speak(content, tone);
-    const instruction = `${delivery.tones[validTone(tone)]} ${delivery.reference}`;
+  async function speakStream(input, tone, onChunk) {
+    if (!voiceStream || fallback) return speak(input, tone);
+    const content = speechText(input);
+    if (!content) return null;
+    const instruction = voiceInstruction(validTone(tone), content);
     let sent = false;
     try {
       await voiceStream.speak(content, instruction, (chunk) => {

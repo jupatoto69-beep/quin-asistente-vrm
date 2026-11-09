@@ -4,12 +4,12 @@ const tones = Object.freeze({
     sample: 'Hola. Me alegra verte por aquí. Cuéntame, ¿qué quieres hacer hoy?',
   },
   picara: {
-    label: 'Pícara', speed: 1.04, pauses: 0.24, pitch: 85, lift: 55,
-    sample: 'Le dije al computador que necesitaba espacio. Y me ofreció vaciar la papelera. Qué considerado, ¿no?',
+    label: 'Pícara', speed: 0.98, pauses: 0.36, pitch: -20, lift: 30,
+    sample: 'Mmm… así que volviste. Qué bien. El computador ya se estaba creyendo mi favorito.',
   },
   seria: {
-    label: 'Seria', speed: 0.95, pauses: 0.43, pitch: -30, lift: 0,
-    sample: 'Vamos paso a paso. Primero revisemos qué ocurrió y luego decidimos la mejor forma de resolverlo.',
+    label: 'Seria', speed: 0.97, pauses: 0.42, pitch: -45, lift: 0,
+    sample: 'A ver… primero confirma que la copia abre. Después seguimos con el cambio.',
   },
   feliz: {
     label: 'Feliz', speed: 1.04, pauses: 0.27, pitch: 75, lift: 45,
@@ -30,9 +30,27 @@ const tones = Object.freeze({
 });
 
 const defaultTone = 'dulce';
+const liveSamples = new Set(['picara', 'seria']);
 
 function validTone(value) {
   return typeof value === 'string' && Object.hasOwn(tones, value) ? value : defaultTone;
 }
 
-module.exports = { tones, defaultTone, validTone };
+const emoji = /[\p{RGI_Emoji}\p{Emoji_Presentation}[\p{Emoji}&&[\u2600-\u27BF]]][\uFE0E\uFE0F\u200D]*/gv;
+const laugh = /\bj([aei])(?:[ ,]*j\1)+j?\b/gi;
+const reactionStart = /(?:^|[.!?…])\s*[¡¿]?\s*(uf+|ay|ah)(?=[,!.…?]|$)/i;
+
+function speechText(text) {
+  const spoken = text.replace(emoji, ' ')
+    .replace(laugh, (_, vowel) => `J${vowel.toLowerCase()}, j${vowel.toLowerCase()}`)
+    .replace(/[ \t]+/g, ' ').replace(/ +([,.!?;:…])/g, '$1').trim();
+  return /[\p{L}\p{N}\p{S}]/u.test(spoken) ? spoken : '';
+}
+
+function speechReaction(text) {
+  if (text.search(laugh) >= 0) return 'laugh';
+  const cue = reactionStart.exec(text)?.[1].toLowerCase();
+  if (cue) return cue === 'ah' ? 'surprise' : 'sigh';
+}
+
+module.exports = { tones, defaultTone, liveSamples, validTone, speechText, speechReaction };

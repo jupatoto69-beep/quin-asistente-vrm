@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' blob: data:; img-src 'self' blob: data:; base-uri 'none'; form-action 'none'">
-  <title>Asistente VRM</title>
+  <title>Quin · Asistente VRM</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="titlebar">
-    <strong>Asistente VRM</strong>
+    <strong>Quin</strong>
     <button id="memory-open" type="button" disabled>Memoria</button>
+    <button id="profile-open" type="button" disabled>Perfil</button>
     <button id="reset-avatar" type="button" title="Restaurar el avatar de muestra" hidden>Usar muestra</button>
     <button id="minimize" class="icon" aria-label="Minimizar" title="Minimizar">−</button>
     <button id="close" class="icon" aria-label="Cerrar" title="Cerrar">×</button>
@@ -59,6 +60,20 @@
       <button id="memory-more" type="button" hidden>Ver más</button>
       <button id="memory-clear" type="button">Borrar toda la memoria</button>
     </footer>
+  </dialog>
+  <dialog id="profile-dialog" aria-labelledby="profile-title">
+    <header class="memory-header">
+      <h2 id="profile-title">Tu perfil para Quin</h2>
+      <form method="dialog"><button class="icon" aria-label="Cerrar perfil">×</button></form>
+    </header>
+    <p class="hint">Se guarda en este PC. Puedes editar tus datos y preferencias. Para quitar el perfil, deja el campo vacío y guarda.</p>
+    <form id="profile-form">
+      <textarea id="profile-text" maxlength="24000" aria-label="Datos y preferencias" spellcheck="false" placeholder="Organiza tus datos en secciones con títulos como ## Identidad"></textarea>
+      <footer class="memory-actions">
+        <span id="profile-status" role="status"></span>
+        <button id="profile-save" class="primary" type="submit" disabled>Guardar</button>
+      </footer>
+    </form>
   </dialog>
   <script type="module" src="/renderer.js"></script>
 </body>

@@ -20,10 +20,10 @@ IDENTITY = (
 DELIVERY = {
     "dulce": "Genuinely glad to talk to a friend, with a soft smile and an interested tone. "
              "Give questions a gentle rise. Take a small natural beat at a marked hesitation.",
-    "picara": "Playful dry wit among friends. Sound amused and spontaneous. Leave a short "
-              "quiet beat before the punchline and emphasize it lightly, with a small smile.",
-    "seria": "Calm and direct, like helping a friend solve a real problem. Clear emphasis "
-             "on important words, short deliberate pauses between ideas, and a soft ending.",
+    "picara": "Warm, softly flirtatious and teasing, with a slightly lower register and an "
+              "audible smile. Pause briefly before the tease. Speak clearly without whispering.",
+    "seria": "Neutral and understated. Steady middle-low register, small pitch changes, clear words, "
+             "even tempo and short natural pauses. Any interjection is brief and dry.",
     "feliz": "Delighted, light and smiling, with a quick lively rhythm and natural rising intonation.",
     "triste": "Soft and genuinely sad, a little slower with pauses and a falling voice.",
     "enojada": "Irritated and firm, with clipped emphasis. Keep the volume conversational.",
