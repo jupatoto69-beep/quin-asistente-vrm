@@ -16,6 +16,8 @@ const resources = new Map([
   ['/style.css', 'src/style.css'],
   ['/renderer.js', 'dist/renderer.js'],
   ['/avatar.vrm', 'assets/avatar.vrm'],
+  ['/movimiento/idle.vrma', 'assets/movimiento/idle.vrma'],
+  ['/movimiento/idle-3.vrma', 'assets/movimiento/idle-3.vrma'],
 ]);
 for (const tone of Object.keys(tones)) {
   if (liveSamples.has(tone)) continue;
@@ -193,6 +195,15 @@ if (!app.requestSingleInstanceLock()) {
     addHandler('preferences:reset-avatar', preferences.resetAvatar);
     addHandler('window:minimize', () => window.minimize());
     addHandler('window:close', () => window.close());
+    addHandler('window:pointer', () => {
+      if (!window.isVisible() || window.isMinimized()) return null;
+      const cursor = screen.getCursorScreenPoint();
+      const { x, y, width, height } = window.getContentBounds();
+      return {
+        x: Math.max(-1, Math.min(2, (cursor.x - x) / width)),
+        y: Math.max(-1, Math.min(2, (cursor.y - y) / height)),
+      };
+    });
     addHandler('window:pass-through', () => {
       if (!passThrough && !globalShortcut.register(shortcut, togglePassThrough)) {
         throw new Error('Ctrl+Alt+V está ocupado. Los clics siguen activos.');

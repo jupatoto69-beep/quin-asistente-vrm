@@ -1,6 +1,6 @@
 import { createAvatar } from './avatar.mjs';
 import { createStreamPlayer, record, toWhisperWav } from './audio.mjs';
-import { tones, liveSamples, validTone } from './voice.cjs';
+import { tones, liveSamples, validTone, speechText, speechReaction } from './voice.cjs';
 import { initializeMemoryPanel } from './memory-panel.mjs';
 import { initializeProfilePanel } from './profile-panel.mjs';
 
@@ -46,6 +46,7 @@ let capture;
 let avatar;
 let replyText;
 let speakingTone;
+let speakingReaction;
 let voicePacket;
 
 function update(next) {
@@ -151,7 +152,8 @@ async function playStream(text, tone) {
 }
 
 async function speak(text, tone, preview = false) {
-  speakingTone = ready.expressiveVoice ? validTone(tone) : undefined;
+  speakingTone = validTone(tone);
+  speakingReaction = speechReaction(speechText(text));
   update('preparing');
   try {
     await unlockAudio();
@@ -168,6 +170,7 @@ async function speak(text, tone, preview = false) {
     }
   } finally {
     speakingTone = undefined;
+    speakingReaction = undefined;
   }
 }
 
@@ -189,6 +192,8 @@ async function answer(text) {
   }
   if (voice.checked && ready.speak) {
     await speak(reply.text, reply.tone);
+  } else {
+    avatar?.reply(reply.tone, speechReaction(speechText(reply.text)));
   }
 }
 
@@ -340,7 +345,9 @@ async function initialize() {
     addMessage('Instalación', `Falta ${missing.join(', ')}. Consulta la guía de preparación.`);
   }
   try {
-    avatar = createAvatar(stage, () => state, mouthLevel);
+    avatar = createAvatar(stage, () => ({
+      state, tone: speakingTone, reaction: speakingReaction,
+    }), mouthLevel, api.pointer);
     if (hasAvatar) {
       resetAvatar.hidden = false;
       try {

@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('assistant', {
   resetAvatar: () => ipcRenderer.invoke('preferences:reset-avatar'),
   minimize: () => ipcRenderer.invoke('window:minimize'),
   close: () => ipcRenderer.invoke('window:close'),
+  pointer: () => ipcRenderer.invoke('window:pointer'),
   passThrough: () => ipcRenderer.invoke('window:pass-through'),
   onPassThrough: (callback) => ipcRenderer.on('window:pass-through', (_event, enabled) => callback(enabled)),
 });

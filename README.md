@@ -1,11 +1,11 @@
-# Quin · v0.3.0
+# Quin · v0.4.0
 
 Quin es mi asistente de escritorio para Windows con avatar VRM y conversación local en español.
 
-## Perfil y actuación de voz
+## Animaciones de reposo y apoyo de pies
 
-- Separé el perfil editable del historial para que Quin pueda usar contexto sin depender de una conversación antigua.
-- Ajusté la interpretación de Pícara y Seria, las pausas y las reacciones. Los emojis quedan fuera del audio.
+- Mezclé animaciones VRMA de reposo con gestos procedurales de respiración, estiramiento y movimiento del cabello.
+- Ajusté el apoyo de los pies y la postura de los brazos para que la cadera pueda moverse sin arrastrar todo el cuerpo.
 
 ## Instalación
 

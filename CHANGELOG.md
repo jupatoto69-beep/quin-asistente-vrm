@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.4.0 · Animaciones de reposo y apoyo de pies
+
+- Mezclé animaciones VRMA de reposo con gestos procedurales de respiración, estiramiento y movimiento del cabello.
+- Ajusté el apoyo de los pies y la postura de los brazos para que la cadera pueda moverse sin arrastrar todo el cuerpo.
+
 ## v0.3.0 · Perfil y actuación de voz
 
 - Separé el perfil editable del historial para que Quin pueda usar contexto sin depender de una conversación antigua.
