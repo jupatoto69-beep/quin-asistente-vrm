@@ -4,12 +4,13 @@ const { replaceFile } = require('./preferences.cjs');
 
 const maxProfileLength = 24_000;
 const contextLimit = 1500;
-const coreSections = new Set(['identidad', 'como trabajar conmigo']);
+const identitySection = 'identidad';
 const relationshipTerms = new Set(['pareja', 'amigo', 'amiga', 'amigos', 'amigas', 'amistades', 'socio', 'socia']);
 const common = new Set([
   'algo', 'como', 'con', 'cual', 'cuales', 'cuando', 'dame', 'del', 'dime', 'donde', 'esta',
-  'este', 'hacer', 'las', 'los', 'mas', 'mis', 'para', 'pero', 'por', 'puedes', 'que', 'quien',
-  'quiero', 'recuerda', 'recuerdas', 'sabes', 'sobre', 'tengo', 'todo', 'tus', 'una', 'uno',
+  'este', 'estoy', 'hacer', 'hola', 'hoy', 'las', 'llama', 'los', 'mas', 'mis', 'para', 'pero',
+  'por', 'puedes', 'que', 'quien', 'quiero', 'quin', 'recuerda', 'recuerdas', 'sabes', 'sobre',
+  'tengo', 'todo', 'trabajar', 'tus', 'una', 'uno',
 ]);
 
 function normalize(text) {
@@ -54,8 +55,8 @@ function createProfile(directory) {
     if (!sections.length) return text ? [{ tema: 'Perfil', datos: text.slice(0, contextLimit - 60) }] : [];
 
     const requested = keywords(prompt);
-    const core = sections.filter((entry) => coreSections.has(normalize(entry.tema)));
-    const other = sections.filter((entry) => !coreSections.has(normalize(entry.tema)));
+    const core = sections.filter((entry) => normalize(entry.tema) === identitySection);
+    const other = sections.filter((entry) => normalize(entry.tema) !== identitySection);
     const relevant = other.map((entry) => {
       const title = keywords(entry.tema);
       const body = keywords(entry.datos);
@@ -76,7 +77,7 @@ function createProfile(directory) {
     let remaining = contextLimit;
     for (const { tema, datos } of selected) {
       const title = tema.slice(0, 100);
-      const limit = Math.min(coreSections.has(normalize(tema)) ? 220 : 520, remaining - title.length - 28);
+      const limit = Math.min(normalize(tema) === identitySection ? 220 : 520, remaining - title.length - 28);
       if (limit < 32) break;
       const split = datos.lastIndexOf(' ', limit - 1);
       const excerpt = datos.length > limit ? datos.slice(0, split > limit / 2 ? split : limit - 1) + '…' : datos;

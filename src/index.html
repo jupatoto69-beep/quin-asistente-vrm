@@ -50,6 +50,11 @@
       <form method="dialog"><button class="icon" aria-label="Cerrar memoria">×</button></form>
     </header>
     <p class="hint">Conversaciones guardadas en este PC.</p>
+    <select id="memory-kind" aria-label="Tipo de recuerdo">
+      <option value="">Todas las conversaciones</option>
+      <option value="story">Historias pendientes</option>
+      <option value="joke">Chistes internos</option>
+    </select>
     <form id="memory-search">
       <input id="memory-query" type="search" maxlength="120" aria-label="Buscar en la memoria" placeholder="Busca por tema o palabra…">
       <button>Buscar</button>

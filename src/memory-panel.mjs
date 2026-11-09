@@ -1,6 +1,7 @@
 export function initializeMemoryPanel(api, messages) {
   const byId = (id) => document.getElementById(id);
   const dialog = byId('memory-dialog');
+  const kindInput = byId('memory-kind');
   const queryInput = byId('memory-query');
   const status = byId('memory-status');
   const list = byId('memory-list');
@@ -14,12 +15,14 @@ export function initializeMemoryPanel(api, messages) {
   async function run(action) {
     if (busy) return;
     busy = true;
+    kindInput.disabled = true;
     try {
       await action();
     } catch (error) {
       status.textContent = error.message.replace(/^Error invoking remote method '[^']+': Error: /, '');
     } finally {
       busy = false;
+      kindInput.disabled = false;
     }
   }
 
@@ -29,6 +32,13 @@ export function initializeMemoryPanel(api, messages) {
     const timestamp = document.createElement('time');
     timestamp.textContent = date.format(entry.saved_at);
     article.append(timestamp);
+    if (entry.kind) {
+      const note = document.createElement('p');
+      const label = document.createElement('strong');
+      label.textContent = entry.kind === 'story' ? 'Historia pendiente · ' : 'Chiste interno · ';
+      note.append(label, document.createTextNode(entry.note_text));
+      article.append(note);
+    }
     for (const [label, text] of [['Tú', entry.question], ['Quin', entry.answer]]) {
       const paragraph = document.createElement('p');
       const author = document.createElement('strong');
@@ -45,19 +55,32 @@ export function initializeMemoryPanel(api, messages) {
       await load(true);
     }));
     article.append(remove);
+    if (entry.kind) {
+      const removeNote = document.createElement('button');
+      removeNote.type = 'button';
+      removeNote.textContent = entry.kind === 'story' ? 'Cerrar historia' : 'Quitar chiste interno';
+      removeNote.addEventListener('click', () => run(async () => {
+        await api.removeNote(entry.id);
+        await load(true);
+      }));
+      article.append(removeNote);
+    }
     return article;
   }
 
   async function load(reset) {
     status.textContent = 'Cargando memoria…';
-    const result = await api.listMemory(query, reset ? null : next);
+    const kind = kindInput.value || null;
+    const result = await api.listMemory(query, reset ? null : next, kind);
     if (reset) list.replaceChildren();
     list.append(...result.entries.map(entryNode));
     next = result.next;
     more.hidden = next === null;
     status.textContent = list.children.length ? '' :
-      query ? 'No encontré conversaciones con esa búsqueda.' : 'Aún no hay conversaciones guardadas.';
-    clear.disabled = !query && !list.children.length;
+      query ? 'No encontré conversaciones con esa búsqueda.' :
+        kind === 'story' ? 'Aún no hay historias pendientes.' :
+          kind === 'joke' ? 'Aún no hay chistes internos.' : 'Aún no hay conversaciones guardadas.';
+    clear.disabled = !kind && !query && !list.children.length;
   }
 
   const open = byId('memory-open');
@@ -73,9 +96,10 @@ export function initializeMemoryPanel(api, messages) {
       await load(true);
     });
   });
+  kindInput.addEventListener('change', () => run(() => load(true)));
   more.addEventListener('click', () => run(() => load(false)));
   clear.addEventListener('click', () => run(async () => {
-    if (!window.confirm('¿Borrar todas las conversaciones guardadas en este PC?')) return;
+    if (!window.confirm('¿Borrar todas las conversaciones, historias pendientes y chistes internos de este PC?')) return;
     await api.clearMemory();
     messages.replaceChildren();
     query = queryInput.value = '';

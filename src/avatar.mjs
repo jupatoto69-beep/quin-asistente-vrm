@@ -333,7 +333,6 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
       return motion.gesture({ ...cue, side }, waitEnd);
   }
 
-
   return {
     load, capabilities, reply: (tone, reaction) => motion.reply(tone, reaction),
     async gesture(cue) {

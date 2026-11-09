@@ -1,11 +1,11 @@
-# Quin · v0.5.0
+# Quin · v0.6.0
 
 Quin es mi asistente de escritorio para Windows con avatar VRM y conversación local en español.
 
-## Manos y órdenes de movimiento
+## Historias pendientes y chistes internos
 
-- Añadí dedos independientes, señalamiento, saludos y pulgar arriba. Quin puede mover los brazos, levantar un pie, agacharse y bailar.
-- Pasé las órdenes a movimientos validados contra el VRM cargado. Las secuencias admiten hasta tres pasos.
+- Añadí historias que quedan pendientes y chistes que se pueden recuperar más adelante.
+- Ajusté el diálogo para que Quin responda primero a lo que le preguntan y haga seguimiento cuando encaje.
 
 ## Instalación
 

@@ -85,7 +85,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 #voice-preview summary { cursor: pointer; }
 .voice-samples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
 
-button, #prompt, #memory-query {
+button, #prompt, #memory-query, #memory-kind {
   min-height: 30px;
   border: 1px solid #624e84;
   border-radius: 7px;
@@ -117,11 +117,13 @@ dialog::backdrop { background: #130b20aa; }
 .memory-header { justify-content: space-between; }
 .memory-header h2 { margin: 0; font-size: 16px; }
 #memory-query { flex: 1; min-width: 0; background: #161024; }
+#memory-kind { background: #161024; margin-bottom: 8px; }
 #memory-status { margin: 7px 0; color: var(--muted); }
 #memory-list { overflow: auto; overflow-wrap: anywhere; }
 .memory-item { padding: 8px; margin-bottom: 6px; border-radius: 7px; background: #130e20; }
 .memory-item p { margin: 4px 0 8px; white-space: pre-wrap; }
 .memory-item time { color: var(--muted); font-size: 11px; }
+.memory-item button + button { margin-left: 6px; }
 .memory-actions { justify-content: space-between; margin-top: 8px; }
 #memory-clear { margin-left: auto; }
 #profile-text {

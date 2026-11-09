@@ -180,8 +180,11 @@ if (!app.requestSingleInstanceLock()) {
       const query = input?.query;
       if (typeof query !== 'string' || query.length > 120) throw new Error('Búsqueda no válida.');
       const before = input.before == null ? null : validMemoryId(input.before);
-      return requireMemory().list(query.trim(), before);
+      const kind = input.kind ?? null;
+      if (kind !== null && kind !== 'story' && kind !== 'joke') throw new Error('Filtro de memoria no válido.');
+      return requireMemory().list(query.trim(), before, kind);
     });
+    addHandler('memory:remove-note', (id) => onlyOne(() => { requireMemory().removeNote(validMemoryId(id)); }));
     addHandler('memory:remove', (id) => onlyOne(() => { requireMemory().remove(validMemoryId(id)); }));
     addHandler('memory:clear', () => onlyOne(() => { requireMemory().clear(); }));
     addHandler('profile:get', personalProfile.get);

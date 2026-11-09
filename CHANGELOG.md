@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.6.0 · Historias pendientes y chistes internos
+
+- Añadí historias que quedan pendientes y chistes que se pueden recuperar más adelante.
+- Ajusté el diálogo para que Quin responda primero a lo que le preguntan y haga seguimiento cuando encaje.
+
 ## v0.5.0 · Manos y órdenes de movimiento
 
 - Añadí dedos independientes, señalamiento, saludos y pulgar arriba. Quin puede mover los brazos, levantar un pie, agacharse y bailar.
