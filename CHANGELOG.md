@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.7.0 · Activación y conversación seguida
+
+- Con «Oye, Quin» se puede abrir la charla. Si solo oye su nombre, contesta con una frase corta antes de escuchar.
+- Quin vuelve a escuchar al terminar su respuesta. Probé el reconocimiento con Whisper Turbo en la GPU y el formato de hora de 12 horas.
+
 ## v0.6.0 · Historias pendientes y chistes internos
 
 - Añadí historias que quedan pendientes y chistes que se pueden recuperar más adelante.

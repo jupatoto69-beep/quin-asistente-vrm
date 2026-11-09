@@ -81,6 +81,7 @@ input[type="checkbox"] { accent-color: var(--accent); }
 #chat, .controls { display: flex; gap: 6px; }
 .controls { margin-top: 7px; }
 .controls button { flex: 1; }
+.wake-toggle { display: flex; align-items: center; gap: 4px; margin-top: 7px; color: var(--muted); }
 #voice-preview { margin-top: 8px; color: var(--muted); }
 #voice-preview summary { cursor: pointer; }
 .voice-samples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }

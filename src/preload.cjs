@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('assistant', {
   speakStream: (text, tone) => ipcRenderer.invoke('assistant:speak-stream', { text, tone }),
   onVoiceChunk: (callback) => ipcRenderer.on('assistant:voice-chunk', (_event, chunk) => callback(chunk)),
   transcribe: (wav) => ipcRenderer.invoke('assistant:transcribe', wav),
+  checkWake: (wav, waiting) => ipcRenderer.invoke('assistant:wake-check', { wav, waiting }),
+  cancelWake: () => ipcRenderer.invoke('assistant:wake-cancel'),
   microphone: (requested) => ipcRenderer.invoke('assistant:microphone', requested),
   listMemory: (query, before, kind) => ipcRenderer.invoke('memory:list', { query, before, kind }),
   removeNote: (id) => ipcRenderer.invoke('memory:remove-note', id),

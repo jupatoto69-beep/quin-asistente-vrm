@@ -1,7 +1,7 @@
 const tones = Object.freeze({
   dulce: {
     label: 'Dulce', speed: 0.96, pauses: 0.34, pitch: 35, lift: 25,
-    sample: 'Hola. Me alegra verte por aquí. Cuéntame, ¿qué quieres hacer hoy?',
+    sample: 'Qué bueno que llegaste. ¿Cómo te fue hoy?',
   },
   picara: {
     label: 'Pícara', speed: 0.98, pauses: 0.36, pitch: -20, lift: 30,
@@ -30,7 +30,9 @@ const tones = Object.freeze({
 });
 
 const defaultTone = 'dulce';
-const liveSamples = new Set(['picara', 'seria']);
+const liveSamples = new Set(['dulce', 'picara', 'seria']);
+const softVoiceTones = new Set(['dulce', 'picara']);
+const wakePhrases = ['dime', 'si', 'te-escucho', 'aja'];
 
 function validTone(value) {
   return typeof value === 'string' && Object.hasOwn(tones, value) ? value : defaultTone;
@@ -39,11 +41,37 @@ function validTone(value) {
 const emoji = /[\p{RGI_Emoji}\p{Emoji_Presentation}[\p{Emoji}&&[\u2600-\u27BF]]][\uFE0E\uFE0F\u200D]*/gv;
 const laugh = /\bj([aei])(?:[ ,]*j\1)+j?\b/gi;
 const reactionStart = /(?:^|[.!?…])\s*[¡¿]?\s*(uf+|ay|ah)(?=[,!.…?]|$)/i;
+const clockNumbers = [
+  'cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve',
+  'diez', 'once', 'doce', 'trece', 'catorce', 'quince', 'dieciséis', 'diecisiete', 'dieciocho', 'diecinueve',
+  'veinte', 'veintiuno', 'veintidós', 'veintitrés', 'veinticuatro', 'veinticinco', 'veintiséis', 'veintisiete', 'veintiocho', 'veintinueve',
+];
 
-function speechText(text) {
-  const spoken = text.replace(emoji, ' ')
+function spokenMinute(value) {
+  const number = Number(value);
+  if (number === 0) return ' en punto';
+  if (number === 1) return ' y un minuto';
+  if (number < 30) return ' y ' + clockNumbers[number];
+  const tens = ['treinta', 'cuarenta', 'cincuenta'][Math.floor(number / 10) - 3];
+  const units = number % 10;
+  return ' y ' + tens + (units ? ' y ' + clockNumbers[units] : '');
+}
+
+function withoutEmoji(text) {
+  return text.replace(emoji, ' ');
+}
+
+function speechText(text, tone) {
+  let spoken = withoutEmoji(text)
+    .replace(/^(Es la|Son las) ([1-9]|1[0-2]):([0-5]\d) ([AP]M)\.$/u, (_, prefix, hour, minutes, period) =>
+      prefix + ' ' + (hour === '1' ? 'una' : clockNumbers[Number(hour)]) + spokenMinute(minutes) + (period === 'AM' ? ', a eme.' : ', pe eme.'))
     .replace(laugh, (_, vowel) => `J${vowel.toLowerCase()}, j${vowel.toLowerCase()}`)
     .replace(/[ \t]+/g, ' ').replace(/ +([,.!?;:…])/g, '$1').trim();
+  if (softVoiceTones.has(tone)) {
+    spoken = spoken.replace(/¡([^!\n]+)!+/gu, (_, phrase) => /[.?…]$/u.test(phrase) ? phrase : phrase + '.')
+      .replace(/^ah(?:…|\.{3})(?=\s+\p{L})/iu, 'Ah,');
+  }
+  if (tone === 'dulce') spoken = spoken.replace(/^(ay|uf)(?:…|\.{3})(?=\s+\p{L})/iu, '$1,');
   return /[\p{L}\p{N}\p{S}]/u.test(spoken) ? spoken : '';
 }
 
@@ -53,4 +81,4 @@ function speechReaction(text) {
   if (cue) return cue === 'ah' ? 'surprise' : 'sigh';
 }
 
-module.exports = { tones, defaultTone, liveSamples, validTone, speechText, speechReaction };
+module.exports = { tones, defaultTone, liveSamples, softVoiceTones, wakePhrases, validTone, withoutEmoji, speechText, speechReaction };

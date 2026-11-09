@@ -1,14 +1,24 @@
 {
   "reference": "Keep the reference speaker's timbre and Latin American Spanish accent.",
-  "picaraSample": "Match the reference recording's voice, register, relaxed rhythm and softly teasing smile. Keep the same Latin American accent and intimate speaking distance. Use small natural pauses and gentle endings, with clear words.",
+  "picaraSample": "Match the reference speaker and her comfortable mid-low speaking register. Speak close, softly and evenly, with a small playful smile, gentle inflections, and relaxed endings. Keep consonants light and the pitch in the reference range.",
   "tones": {
-    "dulce": "Warm, soft and affectionate. A little smile and gentle pauses.",
-    "picara": "Warm, softly flirtatious and teasing, like sharing a private joke. A slightly lower register, relaxed pacing and an audible smile. Pause briefly before the tease. Speak clearly at conversational volume without whispering.",
+    "dulce": "Speak in a soft, warm conversational voice, like gently checking in with a friend. Stay in the reference speaker's comfortable middle register. Use light consonants, even pacing, gentle emphasis and relaxed sentence endings.",
+    "picara": "Warm and gently teasing, like sharing a private joke. Speak clearly in a steady, comfortable mid-low register with a small smile, light emphasis, and relaxed endings.",
     "seria": "Neutral, understated conversational speech. A steady middle-low register, small pitch changes and gently falling endings. Even tempo, clear words and short natural pauses. Keep any interjection brief and dry.",
     "feliz": "Genuinely delighted, smiling broadly, bright lively intonation and energized pacing.",
     "triste": "Clearly sad and subdued, slightly breathy, slower with a small pause and a falling ending.",
     "enojada": "Clearly irritated and firm, focused, clipped articulation and pointed emphasis, without shouting.",
     "timida": "Shy and slightly nervous, quiet with gentle hesitations, a small pause and an uncertain rise."
+  },
+  "softReactions": {
+    "dulce": {
+      "laugh": "Make any written chuckle small and quiet.",
+      "sigh": "Say the interjection softly, with a sympathetic tone."
+    },
+    "picara": {
+      "laugh": "Let the written laugh be a tiny soft chuckle in the same voice.",
+      "sigh": "Read the opening interjection as a soft amused sigh."
+    }
   },
   "reactions": {
     "laugh": "Make the written laugh a brief, soft natural chuckle. Resume the selected speaking tone immediately.",

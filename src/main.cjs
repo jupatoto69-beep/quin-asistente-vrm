@@ -5,7 +5,8 @@ const { pathToFileURL } = require('node:url');
 const { createServices } = require('./services.cjs');
 const { createPreferences } = require('./preferences.cjs');
 const { createProfile } = require('./profile.cjs');
-const { tones, liveSamples } = require('./voice.cjs');
+const { tones, liveSamples, wakePhrases } = require('./voice.cjs');
+const { wakeCommand } = require('./wake-phrase.cjs');
 
 const root = join(__dirname, '..');
 const origin = 'app://asistente';
@@ -15,10 +16,13 @@ const resources = new Map([
   ['/', 'src/index.html'],
   ['/style.css', 'src/style.css'],
   ['/renderer.js', 'dist/renderer.js'],
+  ['/wake-meter.js', 'src/wake-meter.js'],
   ['/avatar.vrm', 'assets/avatar.vrm'],
   ['/movimiento/idle.vrma', 'assets/movimiento/idle.vrma'],
   ['/movimiento/idle-3.vrma', 'assets/movimiento/idle-3.vrma'],
   ['/muestra-picara.wav', 'assets/voz-picara-muestra.wav'],
+  ...wakePhrases.map((name) =>
+    [`/activacion/${name}.wav`, `assets/activacion/${name}.wav`]),
 ]);
 for (const tone of Object.keys(tones)) {
   if (liveSamples.has(tone)) continue;
@@ -38,6 +42,7 @@ let memory;
 let passThrough = false;
 let busy = false;
 let micUntil = 0;
+let wakeJob;
 
 function togglePassThrough() {
   passThrough = !passThrough;
@@ -173,6 +178,27 @@ if (!app.requestSingleInstanceLock()) {
       return result;
     }));
     addHandler('assistant:transcribe', (input) => onlyOne(() => services.transcribe(validWav(input))));
+    addHandler('assistant:wake-check', async (input) => {
+      if (busy || wakeJob) return null;
+      const wav = validWav(input?.wav);
+      if (wav.length > 385_000) throw new Error('El fragmento de activación es demasiado largo.');
+      const job = wakeJob = new AbortController();
+      try {
+        const waiting = input.waiting === true;
+        const transcript = await services.transcribeWake(wav, waiting, job.signal);
+        if (job.signal.aborted) return null;
+        const command = wakeCommand(transcript);
+        if (!waiting) return command;
+        if (!transcript || /^(?:\[[^\]]*\]|\([^)]*\))$/su.test(transcript)) return null;
+        return (command ?? transcript) || null;
+      } catch (error) {
+        if (job.signal.aborted) return null;
+        throw error;
+      } finally {
+        wakeJob = undefined;
+      }
+    });
+    addHandler('assistant:wake-cancel', () => { wakeJob?.abort(); });
     addHandler('assistant:microphone', (requested) => {
       micUntil = requested === true && services.ready.transcribe ? Date.now() + 15_000 : 0;
     });

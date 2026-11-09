@@ -1,6 +1,12 @@
 export async function toWhisperWav(context, blob) {
   const decoded = await context.decodeAudioData(await blob.arrayBuffer());
   if (decoded.duration < 0.35) throw new Error('La grabación es muy corta. Habla un poco más.');
+  const samples = await renderWhisperSamples(decoded);
+  if (!samples.some((sample) => Math.abs(sample) >= 0.015)) throw new Error('No se detectó voz con suficiente volumen.');
+  return encodeWhisperPcm(samples);
+}
+
+async function renderWhisperSamples(decoded) {
   const sampleRate = 16000;
   const length = Math.min(sampleRate * 30, Math.floor(decoded.duration * sampleRate));
   const offline = new OfflineAudioContext(1, length, sampleRate);
@@ -8,7 +14,19 @@ export async function toWhisperWav(context, blob) {
   source.buffer = decoded;
   source.connect(offline.destination);
   source.start();
-  const samples = (await offline.startRendering()).getChannelData(0);
+  return (await offline.startRendering()).getChannelData(0);
+}
+
+export async function wakeWav(context, samples) {
+  if (context.sampleRate === 16000) return encodeWhisperPcm(samples);
+  const decoded = context.createBuffer(1, samples.length, context.sampleRate);
+  decoded.copyToChannel(samples, 0);
+  return encodeWhisperPcm(await renderWhisperSamples(decoded));
+}
+
+function encodeWhisperPcm(samples) {
+  const sampleRate = 16000;
+  const length = samples.length;
   const wav = new Uint8Array(44 + length * 2);
   const header = new DataView(wav.buffer);
   const ascii = (offset, value) => wav.set(new TextEncoder().encode(value), offset);
@@ -24,13 +42,10 @@ export async function toWhisperWav(context, blob) {
   header.setUint16(34, 16, true);
   ascii(36, 'data');
   header.setUint32(40, length * 2, true);
-  let peak = 0;
   for (let i = 0; i < length; i++) {
     const sample = Math.max(-1, Math.min(1, samples[i]));
     header.setInt16(44 + i * 2, Math.round(sample * (sample < 0 ? 32768 : 32767)), true);
-    peak = Math.max(peak, Math.abs(sample));
   }
-  if (peak < 0.015) throw new Error('No se detectó voz con suficiente volumen.');
   return wav;
 }
 
@@ -44,7 +59,6 @@ export function record(stream, maxTime) {
     recorder.addEventListener('error', () => reject(new Error('No se pudo grabar el micrófono.')), { once: true });
   }).finally(() => {
     clearTimeout(timer);
-    stream.getTracks().forEach((track) => track.stop());
   });
   function stop() {
     if (recorder.state === 'recording') recorder.stop();

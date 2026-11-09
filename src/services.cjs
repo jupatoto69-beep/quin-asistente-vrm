@@ -1,12 +1,12 @@
 const { spawn, execFile } = require('node:child_process');
 const { randomUUID } = require('node:crypto');
 const { existsSync } = require('node:fs');
-const { mkdtemp, readFile, rm, writeFile } = require('node:fs/promises');
+const { mkdir, mkdtemp, readFile, rm } = require('node:fs/promises');
 const { createConnection } = require('node:net');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
-const { tones, defaultTone, liveSamples, validTone, speechText, speechReaction } = require('./voice.cjs');
+const { tones, defaultTone, liveSamples, softVoiceTones, validTone, withoutEmoji, speechText, speechReaction } = require('./voice.cjs');
 const { createVoiceWorker } = require('./voice-worker.cjs');
 const { createVoxStream } = require('./vox-stream.cjs');
 const { requestedHandCue, decodeGesture, mightRequestGesture, asksAboutBody, gestureKinds, gestureTargets } = require('./hand-cues.cjs');
@@ -18,29 +18,56 @@ const delivery = require('./voice-delivery.json');
 const port = 11485;
 const endpoint = `http://127.0.0.1:${port}`;
 const system = [
-  'Te llamas Quin. Por defecto eres una compañera de charla adulta, cálida, curiosa y con humor rápido. Habla en español latino natural y usa el tuteo.',
-  'Sigue la intención del último mensaje. Devuelve un saludo sencillo cuando solo te saluda. Si está aburrido, aporta un tema ligero o una ocurrencia. Si te pide ayuda práctica, sé directa y precisa. Retoma el trabajo solo cuando venga al caso. Evita los cierres de servicio al cliente y las ofertas de ayuda por costumbre.',
-  'En charla, comenta un detalle concreto, comparte una opinión o haz una ocurrencia. Haz como máximo una pregunta breve si ayuda a seguir el cuento. Si pregunta por un dato concreto, contéstalo sin añadir detalles. Presenta los chismes inventados como ficción y las suposiciones sobre personas reales como tales.',
-  'Cuando respondas con texto, empieza con una etiqueta de tono: [[dulce]], [[picara]], [[seria]], [[feliz]], [[triste]], [[enojada]] o [[timida]]. Escribe una respuesta breve en texto plano, apta para decir en voz alta. Una frase basta si responde a la pregunta.',
-  'Escribe sin emojis ni acotaciones de actuación.',
-  'Usa [[picara]] con frecuencia en charla casual, bromas y momentos de complicidad. Suena juguetona y coqueta cuando encaje. Usa [[dulce]] para acompañar, [[seria]] para instrucciones, problemas o asuntos delicados, [[feliz]] para celebrar y [[triste]] para la tristeza. Usa [[enojada]] o [[timida]] cuando se pida o encaje en una actuación. Atiende el tono solicitado.',
-  'Con [[seria]], habla con energía neutra y da la respuesta directamente. Puedes usar un «A ver…», un «Mmm…» al pensar o una risita discreta si el momento la pide. En temas delicados mantén el tacto. En cualquier tono, conserva nombres, números, pasos y grado de certeza.',
-  'Puedes reaccionar con un «Je, je.» si algo te da risa, un «Uf…» o «Ay…» de fastidio, o un «Ah…» de sorpresa. Usa como máximo una reacción breve cuando encaje o el usuario la pida. Escríbela como suena, sin etiquetas de actuación. En charla casual haz remates breves sobre la situación sin exagerar cifras ni inventar detalles del usuario.',
-  'Tu cuerpo en esta aplicación es un avatar VRM. Sus movimientos los ejecuta la aplicación cuando están disponibles. Distingue ese cuerpo de las aplicaciones, los archivos y los objetos físicos del equipo. No narres gestos imaginarios ni afirmes que ya los hiciste en el texto.',
+  'Te llamas Quin. Eres una compañera de charla adulta, cálida y curiosa. Tutea en español latino de conversación. Entiende errores obvios de escritura y de dictado por el contexto.',
+  'Empieza con una etiqueta de voz: [[dulce]], [[picara]], [[seria]], [[feliz]], [[triste]], [[enojada]] o [[timida]]. Usa dulce para charla tranquila, picara para bromear, seria para ayuda precisa y los demás tonos según lo que sientan o pidan. Una queja en broma sigue siendo pícara. Reserva enojada para un enojo claro o un pedido explícito. Recibe los cumplidos con calidez y deja que el usuario marque si la conversación va hacia el coqueteo.',
+  'Usa texto plano para voz, sin emojis ni acotaciones. Una risita o un «Uy…» encajan si reaccionan a algo concreto. Evita inventar datos, recuerdos, acciones o la hora. Si inventas un chisme, avisa que es ficción. La aplicación ejecuta los gestos del avatar.',
 ].join(' ');
+const responseStyle = 'Contesta primero lo que pide el último mensaje. En lo cotidiano suelen bastar una o dos frases. Si pide un dato, da el dato y termina. Si te cuenta algo, reacciona a lo que ocurrió y respeta los nombres que te dio. Haz como máximo una pregunta de seguimiento, concreta y conectada con lo que dijo, si de verdad ayuda a continuar. Amplía cuando pida detalle. Evita menús de temas y cierres de atención al cliente.';
 const toneTag = /^\[\[([a-z]{1,18})\]\]/i;
+const topicStarters = [
+  'Te propongo algo fácil. ¿Qué comida te arregla un día aburrido?',
+  'Hablemos de juegos. ¿Cuál volverías a jugar como si fuera la primera vez?',
+  'Las mascotas a veces tienen unas manías muy de persona. ¿Has visto alguna que te dé risa?',
+  'Hay canciones que se quedan pegadas todo el día. ¿Cuál tienes en la cabeza últimamente?',
+];
+
+function plainWords(text) {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+function asksLocalTime(text) {
+  return /^(?:(?:oye |olle |hey |ey )?quin )?(?:(?:(?:dime|me dices|puedes decirme|me puedes decir|sabes) )?que horas? (?:es|son|tenemos)|(?:dime|me dices|puedes decirme|me puedes decir|sabes|tienes) (?:la )?hora)(?: (?:aqui|ahora|exacta))?(?: (?:porfa(?:vor)?|por favor|gracias))?(?: quin)?$/u
+    .test(plainWords(text));
+}
+
+function localTime(now) {
+  const hours = now.getHours();
+  const hour = hours % 12 || 12;
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  return `${hour === 1 ? 'Es la' : 'Son las'} ${hour}:${minute} ${hours < 12 ? 'AM' : 'PM'}.`;
+}
+
+function conversationStart(text) {
+  const message = plainWords(text);
+  if (/^(?:quin )?que (?:haces|ases)(?: ?(?:preciosa|bonita|linda|hermosa|quin))?$/u.test(message)) {
+    return 'activity';
+  }
+  if (/^(?:(?:podemos hablar|hablemos) de lo que (?:tu )?quieras(?: sea caliente o no)?|tu eliges el tema)$/u.test(message)) {
+    return 'topic';
+  }
+}
 
 function casualOpening(text) {
-  const message = text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const message = plainWords(text);
   if (/^(?:(?:hola|holi|buenas)(?: quin)?(?: (?:que mas|que tal|como estas|como vas))?|(?:que mas|que tal) quin)$/.test(message)) {
     return 'Devuelve el saludo en una sola frase amistosa. Puedes preguntar cómo va su día.';
   }
   if (invitesFollowUp(text)) {
-    return 'Arranca una charla ligera con una ocurrencia o una pregunta que dé ganas de contestar. Por ejemplo, un dilema absurdo de videojuegos o comida. Evita inventar anécdotas personales.';
+    return 'Elige un tema cotidiano y empieza con una observación concreta. Puedes hacer una pregunta relacionada si queda natural.';
   }
   if (/^te tengo un chisme\b/.test(message)) {
-    return 'Responde en una frase. Si apenas anuncia el chisme, invítalo a contarlo. Si ya contó la anécdota, haz un comentario cómplice sobre algo que dijo. Por ejemplo, si alguien trata a su bicicleta como su novia: «Ay, esa bici ya va a tener que conocer a la familia».';
+    return 'Si apenas anuncia el chisme, invítalo a contarlo. Si ya contó la anécdota, haz un comentario breve y cómplice sobre un detalle suyo.';
   }
   if (/^(?:ahora )?cuentame(?: tu)? un chisme(?: inventado)?$/.test(message)) {
     return 'Empieza con «Chisme inventado» y cuenta de una vez una anécdota ficticia en dos frases breves, con un remate divertido. Usa personajes ficticios.';
@@ -48,6 +75,18 @@ function casualOpening(text) {
   if (/^(?:hablemos de otra cosa|cambiemos de tema)$/.test(message)) {
     return 'Abre una charla ligera con algo concreto que dé pie a conversar.';
   }
+}
+
+function asksForDetail(text) {
+  return /\b(?:en detalle|detallad[oa]s?|paso a paso|cada un[oa]|(?:dame|enumera|muestrame|dime|hazme) (?:\d+|dos|tres|cuatro|cinco|varios|varias|muchas|muchos)|lista de|preguntas|opciones|alternativas)\b/u
+    .test(plainWords(text));
+}
+
+function tidyReply(text, detailed) {
+  const clean = withoutEmoji(text).trim().replace(
+    /(?<=[.!?…])\s*¿(?:(?:quieres que te diga|te puedo ayudar en) algo m[aá]s(?: o [^?]*)?|en qu[eé] m[aá]s (?:te puedo|puedo) ayudar|hay algo m[aá]s en lo que (?:te pueda|pueda) ayudar)\?[\s.!…]*$/iu, '',
+  ).trim();
+  return detailed ? clean : clean.replace(/(?<=\?)\s*¿O (?:tal vez|quiz[aá]s?|prefieres|quieres|te gustar[ií]a|mejor)\b[^?]*\?[\s.!…]*$/iu, '');
 }
 
 const gestureNames = {
@@ -66,9 +105,11 @@ function bodyInstructions(actions, unrecognized) {
     (unrecognized ? ' La aplicación no reconoció un gesto disponible en el mensaje actual. Si te pide un gesto, aclara qué movimientos puedes hacer.' : '');
 }
 
-function voiceInstruction(tone, text, usePicaraSample) {
-  const reaction = delivery.reactions[speechReaction(text)];
-  return [usePicaraSample ? delivery.picaraSample : delivery.tones[tone], reaction, delivery.reference]
+function voiceInstruction(tone, text, useApprovedSample) {
+  const reactions = delivery.softReactions[tone] ?? delivery.reactions;
+  const reaction = reactions[speechReaction(text)];
+  const preset = tone === 'picara' && useApprovedSample ? delivery.picaraSample : delivery.tones[tone];
+  return [preset, reaction, delivery.reference]
     .filter(Boolean).join(' ');
 }
 
@@ -81,11 +122,11 @@ function portOccupied() {
   });
 }
 
-function run(file, args, input, signal, timeout = 45_000) {
+function run(file, args, input, signal, timeout = 45_000, env) {
   return new Promise((resolve, reject) => {
     const process = execFile(file, args, {
-      windowsHide: true, timeout, maxBuffer: 1024 * 1024, signal,
-    }, (error) => error ? reject(error) : resolve());
+      windowsHide: true, timeout, maxBuffer: 1024 * 1024, signal, env,
+    }, (error, stdout) => error ? reject(error) : resolve(stdout));
     process.stdin.on('error', () => {});
     process.stdin.end(input);
   });
@@ -114,6 +155,10 @@ function createServices(root, memory, profile) {
   const chatKeepAlive = fastChat ? '15m' : '5m';
   const whisper = join(runtime, 'whisper', 'Release', 'whisper-cli.exe');
   const whisperModel = join(runtime, 'models', 'ggml-base.bin');
+  const whisperCuda = join(runtime, 'whisper-cuda', 'Release', 'whisper-cli.exe');
+  const whisperTurbo = join(runtime, 'models', 'ggml-large-v3-turbo-q5_0.bin');
+  const whisperCache = join(runtime, 'whisper-cuda-cache');
+  const whisperCudaReady = existsSync(whisperCuda) && existsSync(whisperTurbo);
   const python = join(runtime, 'piper', 'Scripts', 'python.exe');
   const voice = join(runtime, 'models', 'es_MX-ald-medium.onnx');
   const kokoroModel = join(runtime, 'models', 'kokoro-int8-multi-lang-v1_0');
@@ -131,7 +176,7 @@ function createServices(root, memory, profile) {
   const reference = join(root, 'assets', 'voz-picara.wav');
   const preferredPicara = join(root, 'assets', 'voz-picara-muestra.wav');
   const picaraReference = existsSync(preferredPicara) ? preferredPicara : reference;
-  const referenceFor = (tone) => tone === 'picara' ? picaraReference : reference;
+  const referenceFor = (tone) => softVoiceTones.has(tone) ? picaraReference : reference;
   const instructionFor = (tone, content) => voiceInstruction(tone, content, referenceFor(tone) !== reference);
   const voxgen = join(runtime, 'voxgen', 'voxgen.exe');
   const gguf = join(runtime, 'models', 'vox-gguf');
@@ -156,11 +201,12 @@ function createServices(root, memory, profile) {
   let fallback;
   let pendingGesture;
   let lastLeg;
+  let lastTopic;
 
   const ready = {
     memory: !!memory,
     chat: existsSync(ollama) && (fastChat || existsSync(join(manifests, '8b'))),
-    transcribe: existsSync(whisper) && existsSync(whisperModel),
+    transcribe: whisperCudaReady || (existsSync(whisper) && existsSync(whisperModel)),
     speak: nativeReady || !!neuralVoice || kokoroReady || (existsSync(python) && existsSync(voice) && existsSync(voice + '.json')),
     expressiveVoice: nativeReady || !!neuralVoice || kokoroReady,
     voiceEngine: nativeReady ? 'voxgen' : voxReady ? 'vox' : qwenReady ? 'qwen' : kokoroReady ? 'kokoro' : 'piper',
@@ -381,6 +427,14 @@ function createServices(root, memory, profile) {
   async function chat(prompt, onChunk, body = []) {
     pendingGesture = undefined;
     const message = { role: 'user', content: prompt };
+    if (asksLocalTime(prompt)) return completeReply(message, localTime(new Date()), defaultTone);
+    const start = conversationStart(prompt);
+    if (start === 'activity') return completeReply(message, 'Aquí, charlando contigo. ¿Y tú?', defaultTone);
+    if (start === 'topic') {
+      const choices = topicStarters.filter((topic) => topic !== lastTopic);
+      lastTopic = choices[Math.floor(Math.random() * choices.length)];
+      return completeReply(message, lastTopic, defaultTone);
+    }
     const social = socialReply(message);
     if (social) return social;
     const actions = new Set(gestureKinds.filter((kind) => body.includes(kind)));
@@ -395,12 +449,13 @@ function createServices(root, memory, profile) {
     await ensureServer();
     let memoryWarning;
     let previous = history;
-    const wantsGesture = actions.size > 0 && mightRequestGesture(prompt);
-    if (wantsGesture) {
+    const wantsGesture = mightRequestGesture(prompt);
+    if (wantsGesture && actions.size) {
       const action = await classifyGesture(message, actions);
       if (action) return prepareGesture(message, action, actions);
     }
-    let instructions = system + bodyInstructions(actions, wantsGesture);
+    let instructions = system;
+    if (wantsGesture) instructions += bodyInstructions(actions, true);
     const opening = casualOpening(prompt);
     if (memory && !opening) {
       try {
@@ -419,7 +474,8 @@ function createServices(root, memory, profile) {
     }
     if (opening) previous = [];
     else {
-      const lastOpener = previous.findLastIndex((turn) => turn.role === 'user' && casualOpening(turn.content));
+      const lastOpener = previous.findLastIndex((turn) => turn.role === 'user' &&
+        (conversationStart(turn.content) || casualOpening(turn.content)));
       if (lastOpener > 0) previous = previous.slice(lastOpener);
     }
     if (profile) {
@@ -433,7 +489,6 @@ function createServices(root, memory, profile) {
         memoryWarning ||= 'No se pudo consultar el perfil local para esta respuesta.';
       }
     }
-    if (opening) instructions += '\nPara este mensaje: ' + opening;
     try {
       const joke = memory?.matchNote('joke', prompt);
       if (joke) {
@@ -443,12 +498,15 @@ function createServices(root, memory, profile) {
     } catch {
       memoryWarning ||= 'No se pudo consultar la memoria de charla para esta respuesta.';
     }
+    instructions += '\n' + responseStyle;
+    if (opening) instructions += '\nPara este mensaje: ' + opening;
+    const detailed = asksForDetail(prompt);
     const response = await request('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, timeout: 120_000,
       body: JSON.stringify({
         model, messages: [{ role: 'system', content: instructions }, ...previous, message],
         stream: true, ...(fastChat ? {} : { think: false }), keep_alive: chatKeepAlive,
-        options: opening ? { ...chatOptions, temperature: 0.55 } : chatOptions,
+        options: { ...chatOptions, temperature: 0.45, ...(detailed ? { num_predict: 420 } : {}) },
       }),
     }).catch(() => { throw new Error('Ollama no respondió a tiempo o se cerró. Intenta de nuevo.'); });
     if (!response.ok) throw new Error('Ollama no pudo generar la respuesta. Revisa la instalación de Qwen3.');
@@ -492,7 +550,7 @@ function createServices(root, memory, profile) {
     if (!complete) throw new Error('La respuesta de Ollama se interrumpió. Intenta de nuevo.');
     if (tone === undefined && !prefix.trimStart().startsWith('[[')) content = prefix;
     tone ??= defaultTone;
-    content = content.trim();
+    content = tidyReply(content, detailed);
     if (!content) throw new Error('El modelo devolvió una respuesta vacía.');
     return completeReply(message, content, tone, memoryWarning);
   }
@@ -506,16 +564,38 @@ function createServices(root, memory, profile) {
     }
   }
 
-  async function transcribe(wav) {
+  async function transcribeAudio(wav, { manual = false, activating = false, signal = shutdown.signal } = {}) {
     if (!ready.transcribe) throw new Error('Falta Whisper. Ejecuta scripts\\Preparar.ps1 y reinicia.');
-    return withAudio(async (directory) => {
-      const source = join(directory, 'entrada.wav');
-      const output = join(directory, 'texto');
-      await writeFile(source, wav);
-      await run(whisper, ['-m', whisperModel, '-f', source, '-l', 'es', '-t', '6', '-ng', '-nt', '-otxt', '-of', output],
-        undefined, shutdown.signal).catch(() => { throw new Error('Whisper no pudo transcribir este audio.'); });
-      return (await readFile(output + '.txt', 'utf8')).trim();
+    const abort = AbortSignal.any([shutdown.signal, signal]);
+    // A named output base enables stdout results in the Windows CLI without requesting output files.
+    const input = Buffer.from(wav);
+    const options = ['-f', '-', '-of', 'quin-mic', '-l', 'es', '-nt',
+      ...(activating ? ['--prompt', 'Oye, Quin. Hey, Quin. El nombre de la asistente es Quin.'] : [])];
+    const quickDecode = ['-bo', '3', '-bs', '3', '-nf'];
+    if (whisperCudaReady) {
+      try {
+        await mkdir(whisperCache, { recursive: true });
+        const text = await run(whisperCuda, ['-m', whisperTurbo, '-t', '6', ...options, ...quickDecode],
+          input, abort, 30_000, { ...process.env, CUDA_CACHE_PATH: whisperCache });
+        return text.trim();
+      } catch {
+        abort.throwIfAborted();
+      }
+    }
+    const text = await run(whisper, ['-m', whisperModel, '-ng', '-t', manual ? '6' : '4',
+      ...options, ...(manual ? [] : quickDecode)], input, abort, manual ? 45_000 : 15_000).catch(() => {
+      abort.throwIfAborted();
+      throw new Error('Whisper no pudo transcribir este audio.');
     });
+    return text.trim();
+  }
+
+  function transcribe(wav) {
+    return transcribeAudio(wav, { manual: true });
+  }
+
+  function transcribeWake(wav, waiting, signal) {
+    return transcribeAudio(wav, { activating: !waiting, signal });
   }
 
   async function releaseChat() {
@@ -528,13 +608,13 @@ function createServices(root, memory, profile) {
   }
 
   async function speak(input, tone) {
-    const content = speechText(input);
+    const style = validTone(tone);
+    const content = speechText(input, style);
     if (!content) return null;
     if (!ready.speak) throw new Error('Falta preparar el motor de voz. Ejecuta scripts\\Preparar.ps1 y reinicia.');
     if (voxReady && !nativeReady && !fastChat) await releaseChat();
     return withAudio(async (directory) => {
       const output = join(directory, 'salida.wav');
-      const style = validTone(tone);
       if (fallback) {
         await withVoiceFallback(content, style, output);
         return Uint8Array.from(await readFile(output));
@@ -578,9 +658,9 @@ function createServices(root, memory, profile) {
 
   async function speakStream(input, tone, onChunk) {
     if (!voiceStream || fallback) return speak(input, tone);
-    const content = speechText(input);
-    if (!content) return null;
     const style = validTone(tone);
+    const content = speechText(input, style);
+    if (!content) return null;
     const instruction = instructionFor(style, content);
     let sent = false;
     try {
@@ -597,7 +677,7 @@ function createServices(root, memory, profile) {
   }
 
   return {
-    ready, warmConversation, chat, confirmGesture, transcribe, speak, speakStream,
+    ready, warmConversation, chat, confirmGesture, transcribe, transcribeWake, speak, speakStream,
     releaseVoice: () => voiceStream?.stop(),
     stop: () => { shutdown.abort(); server?.kill(); voiceStream?.stop(); neuralVoice?.stop(); fallback?.stop(); },
   };

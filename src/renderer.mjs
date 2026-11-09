@@ -1,9 +1,10 @@
 import { createAvatar } from './avatar.mjs';
 import { createStreamPlayer, record, toWhisperWav } from './audio.mjs';
-import { tones, liveSamples, validTone, speechText, speechReaction } from './voice.cjs';
+import { tones, liveSamples, softVoiceTones, wakePhrases, validTone, speechText, speechReaction } from './voice.cjs';
 import { initializeMemoryPanel } from './memory-panel.mjs';
 import { initializeProfilePanel } from './profile-panel.mjs';
 import { handCue } from './hand-cues.cjs';
+import { watchWake } from './wake-listener.mjs';
 
 const api = window.assistant;
 initializeProfilePanel(api);
@@ -14,6 +15,7 @@ const prompt = byId('prompt');
 const mic = byId('mic');
 const send = byId('send');
 const voice = byId('voice');
+const wake = byId('wake');
 const messages = byId('messages');
 const file = byId('file');
 const pick = byId('pick');
@@ -45,6 +47,11 @@ let context;
 let analyser;
 let samples;
 let capture;
+let wakeListener;
+let wakeArmed = false;
+let wakeReplies = [];
+let lastWakeReply;
+let wakePlayback;
 let avatar;
 let replyText;
 let speakingTone;
@@ -55,12 +62,17 @@ function update(next) {
   state = next;
   document.body.dataset.state = state;
   let label = state === 'idle' && !ready.chat ? 'Falta preparar Ollama y Qwen3' : labels[state];
+  if (state === 'idle' && wake.checked && wakeListener) label = 'Activa · di «Hey, Quin»';
+  if (state === 'listening' && wakeArmed) label = 'Te escucho…';
+  if (state === 'speaking' && wakeArmed) label = 'Quin te oyó…';
   if (state === 'speaking' && speakingTone) label += ' · ' + tones[speakingTone].label;
   byId('status').textContent = label;
   send.disabled = state !== 'idle' || !ready.chat;
-  mic.disabled = !ready.chat || !ready.transcribe || !['idle', 'listening'].includes(state);
-  mic.textContent = state === 'listening' ? 'Terminar' : 'Hablar';
-  mic.setAttribute('aria-pressed', String(state === 'listening'));
+  mic.disabled = !ready.chat || !ready.transcribe || !(wakeArmed || ['idle', 'listening'].includes(state));
+  mic.textContent = wakeArmed ? 'Terminar charla' : state === 'listening' ? 'Terminar' : 'Hablar';
+  mic.setAttribute('aria-pressed', String(wakeArmed || state === 'listening'));
+  wake.disabled = !ready.chat || !ready.transcribe || (state !== 'idle' && (!wake.checked || !wakeListener));
+  wakeListener?.setEnabled(wakeArmed || (wake.checked && state === 'idle'));
   for (const button of toneButtons) button.disabled = state !== 'idle' || !ready.expressiveVoice;
 }
 
@@ -90,6 +102,17 @@ async function unlockAudio() {
   if (context.state !== 'running') await context.resume();
 }
 
+async function openMicrophone() {
+  await api.microphone(true);
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+    });
+  } finally {
+    await api.microphone(false);
+  }
+}
+
 function mouthLevel() {
   if (!analyser) return 0;
   analyser.getFloatTimeDomainData(samples);
@@ -98,33 +121,50 @@ function mouthLevel() {
   return Math.min(0.95, Math.max(0, Math.sqrt(energy / samples.length) * 5 - 0.045));
 }
 
-async function play(wav, tone) {
+function connectVoiceOutput(input, tone) {
+  if (!softVoiceTones.has(tone)) {
+    input.connect(context.destination);
+    return;
+  }
+  const shelf = context.createBiquadFilter();
+  shelf.type = 'highshelf';
+  shelf.frequency.value = 3500;
+  shelf.gain.value = -3.5;
+  input.connect(shelf).connect(context.destination);
+  return shelf;
+}
+
+async function play(wav, tone, referenceSample = false) {
   const audio = await context.decodeAudioData(wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength));
+  update('speaking');
+  await startBufferedAudio(audio, tone, referenceSample).ended;
+}
+
+function startBufferedAudio(audio, tone, referenceSample = false) {
   const source = context.createBufferSource();
-  analyser = context.createAnalyser();
-  analyser.fftSize = 512;
-  samples = new Float32Array(analyser.fftSize);
+  const meter = analyser = context.createAnalyser();
+  meter.fftSize = 512;
+  samples = new Float32Array(meter.fftSize);
   source.buffer = audio;
-  if (ready.voiceEngine === 'kokoro') {
+  if (tone && ready.voiceEngine === 'kokoro') {
     const { pitch, lift } = tones[tone];
     const now = context.currentTime;
     source.detune.setValueAtTime(pitch, now);
     source.detune.linearRampToValueAtTime(pitch + lift, now + audio.duration * 0.35);
     source.detune.linearRampToValueAtTime(pitch, now + audio.duration * 0.8);
   }
-  source.connect(analyser);
-  analyser.connect(context.destination);
-  update('speaking');
-  try {
-    await new Promise((resolve) => {
-      source.addEventListener('ended', resolve, { once: true });
-      source.start();
-    });
-  } finally {
+  source.connect(meter);
+  const output = connectVoiceOutput(meter, referenceSample ? undefined : tone);
+  const ended = new Promise((resolve) => {
+    source.addEventListener('ended', resolve, { once: true });
+    source.start();
+  }).finally(() => {
     source.disconnect();
-    analyser.disconnect();
-    analyser = undefined;
-  }
+    meter.disconnect();
+    output?.disconnect();
+    if (analyser === meter) analyser = undefined;
+  });
+  return { ended, stop: () => source.stop() };
 }
 
 api.onVoiceChunk((chunk) => voicePacket?.(chunk));
@@ -133,7 +173,7 @@ async function playStream(text, tone) {
   analyser = context.createAnalyser();
   analyser.fftSize = 512;
   samples = new Float32Array(analyser.fftSize);
-  analyser.connect(context.destination);
+  const output = connectVoiceOutput(analyser, tone);
   const player = createStreamPlayer(context, analyser, () => update('speaking'));
   const playback = new Promise((resolve) => {
     voicePacket = (chunk) => {
@@ -149,6 +189,7 @@ async function playStream(text, tone) {
     voicePacket = undefined;
     player.dispose();
     analyser.disconnect();
+    output?.disconnect();
     analyser = undefined;
   }
 }
@@ -162,7 +203,7 @@ async function speak(text, tone, preview = false) {
     if (preview && (tone === 'picara' ? ready.picaraSample : !liveSamples.has(tone) && ready.voiceSamples)) {
       const response = await fetch(`/muestra-${tone}.wav`);
       if (!response.ok) throw new Error('No se pudo abrir la muestra de voz.');
-      await play(new Uint8Array(await response.arrayBuffer()), speakingTone);
+      await play(new Uint8Array(await response.arrayBuffer()), speakingTone, true);
     } else if (ready.voiceStream) {
       const fallback = await playStream(text, tone);
       if (fallback) await play(fallback, speakingTone);
@@ -234,6 +275,7 @@ api.onReplyChunk((chunk) => {
 
 voice.addEventListener('change', async () => {
   const enabled = voice.checked;
+  if (!enabled) wakePlayback?.stop();
   voice.disabled = true;
   try {
     await api.setVoice(enabled);
@@ -245,14 +287,111 @@ voice.addEventListener('change', async () => {
   }
 });
 
-byId('chat').addEventListener('submit', async (event) => {
+async function answerInput(text, listener) {
+  try {
+    await answer(text.slice(0, 1200));
+    if (listener && listener === wakeListener) {
+      wakeArmed = true;
+      listener.waitForCommand();
+      update('listening');
+      return;
+    }
+  } catch (error) {
+    report(error);
+  }
+  if (listener && listener === wakeListener) endVoiceConversation();
+  else update('idle');
+}
+
+byId('chat').addEventListener('submit', (event) => {
   event.preventDefault();
   const text = prompt.value.trim();
   if (!text || state !== 'idle' || !ready.chat) return;
   prompt.value = '';
+  void answerInput(text);
+});
+
+async function preloadWakeReplies() {
+  if (wakeReplies.length === wakePhrases.length) return;
+  const results = await Promise.allSettled(wakePhrases.map(async (name) => {
+    const response = await fetch(`/activacion/${name}.wav`);
+    if (!response.ok) throw new Error('Falta una respuesta de activación.');
+    return context.decodeAudioData(await response.arrayBuffer());
+  }));
+  wakeReplies = results.filter(({ status }) => status === 'fulfilled').map(({ value }) => value);
+}
+
+function acknowledgeWake(canSpeak) {
+  wakeArmed = true;
+  if (!canSpeak || !voice.checked || !wakeReplies.length) {
+    update('listening');
+    return;
+  }
+  const choices = wakeReplies.filter((reply) => reply !== lastWakeReply);
+  lastWakeReply = choices[Math.floor(Math.random() * choices.length)] ?? wakeReplies[0];
+  const playback = wakePlayback = startBufferedAudio(lastWakeReply);
+  update('speaking');
+  return playback.ended.finally(() => {
+    if (wakePlayback !== playback) return;
+    wakePlayback = undefined;
+    update('listening');
+  });
+}
+
+function finishWakeWait() {
+  wakeArmed = false;
+  const playback = wakePlayback;
+  wakePlayback = undefined;
+  playback?.stop();
+}
+
+function endVoiceConversation() {
+  finishWakeWait();
+  if (!wake.checked) {
+    wakeListener?.close();
+    wakeListener = undefined;
+  }
+  update('idle');
+}
+
+function disableWake() {
+  wakeListener?.close();
+  wakeListener = undefined;
+  wake.checked = false;
+  const next = wakeArmed ? 'idle' : state;
+  finishWakeWait();
+  update(next);
+}
+
+function createVoiceListener(stream) {
+  return watchWake(context, stream, api, {
+    armed: acknowledgeWake,
+    command(text) {
+      finishWakeWait();
+      void answerInput(text, wakeListener);
+    },
+    idle: endVoiceConversation,
+    stop: disableWake,
+    error(error) {
+      disableWake();
+      report(error);
+    },
+  });
+}
+
+wake.addEventListener('change', async () => {
+  if (!wake.checked) { disableWake(); return; }
+  if (state !== 'idle') { wake.checked = false; return; }
+  update('opening');
+  let stream;
   try {
-    await answer(text);
+    await unlockAudio();
+    await preloadWakeReplies();
+    stream = await openMicrophone();
+    wakeListener = await createVoiceListener(stream);
   } catch (error) {
+    stream?.getTracks().forEach((track) => track.stop());
+    wake.checked = false;
     report(error);
   } finally {
     update('idle');
@@ -261,33 +400,36 @@ byId('chat').addEventListener('submit', async (event) => {
 
 mic.addEventListener('click', async () => {
   if (capture) { capture.stop(); return; }
+  if (wakeArmed) { wakeListener?.cancel(); return; }
   if (state !== 'idle') return;
+  const background = wakeListener;
   update('opening');
   let stream;
   try {
-    await api.microphone(true);
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-      });
-    } finally {
-      await api.microphone(false);
-    }
+    stream = await openMicrophone();
     capture = record(stream, 29_000);
     update('listening');
     const blob = await capture.result;
     capture = undefined;
+    for (const track of stream.getAudioTracks()) track.enabled = false;
     update('transcribing');
     await unlockAudio();
     const transcript = await api.transcribe(await toWhisperWav(context, blob));
     if (!transcript) throw new Error('Whisper no encontró palabras. Intenta de nuevo.');
-    await answer(transcript.slice(0, 1200));
+    if (!background) {
+      wakeListener = await createVoiceListener(stream);
+      stream = undefined;
+    } else {
+      for (const track of stream.getTracks()) track.stop();
+      stream = undefined;
+    }
+    await answerInput(transcript, wakeListener);
   } catch (error) {
     report(error);
+    update('idle');
   } finally {
     capture = undefined;
     stream?.getTracks().forEach((track) => track.stop());
-    update('idle');
   }
 });
 
