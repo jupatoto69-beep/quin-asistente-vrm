@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.8.0 · Giro, zoom y apariencia por avatar
+
+- Añadí el giro al arrastrar, el zoom con la rueda y el restablecimiento de la vista.
+- La descripción se guarda por archivo VRM. Quin puede describir el avatar activo y aprender una descripción nueva.
+
 ## v0.7.0 · Activación y conversación seguida
 
 - Con «Oye, Quin» se puede abrir la charla. Si solo oye su nombre, contesta con una frase corta antes de escuchar.

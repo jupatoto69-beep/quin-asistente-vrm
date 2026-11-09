@@ -5,6 +5,7 @@ const { pathToFileURL } = require('node:url');
 const { createServices } = require('./services.cjs');
 const { createPreferences } = require('./preferences.cjs');
 const { createProfile } = require('./profile.cjs');
+const { createAppearanceCatalog } = require('./appearance.cjs');
 const { tones, liveSamples, wakePhrases } = require('./voice.cjs');
 const { wakeCommand } = require('./wake-phrase.cjs');
 
@@ -35,6 +36,7 @@ protocol.registerSchemesAsPrivileged([{
 app.setPath('userData', join(root, '.local', 'profile'));
 const preferences = createPreferences(app.getPath('userData'));
 const personalProfile = createProfile(app.getPath('userData'));
+const appearanceCatalog = createAppearanceCatalog(app.getPath('userData'));
 
 let window;
 let services;
@@ -167,7 +169,7 @@ if (!app.requestSingleInstanceLock()) {
     addHandler('assistant:ready', () => services.ready);
     addHandler('assistant:chat', (input, sender) => onlyOne(() => services.chat(validText(input?.text, 1200), (chunk) => {
       if (!sender.isDestroyed()) sender.send('assistant:reply-chunk', chunk);
-    }, Array.isArray(input?.body) ? input.body : [])));
+    }, Array.isArray(input?.body) ? input.body : [], appearanceCatalog.current(input?.avatarId))));
     addHandler('assistant:gesture-result', (input) => onlyOne(() => services.confirmGesture(input?.id, input?.performed)));
     addHandler('assistant:speak', (input) => onlyOne(() => services.speak(validText(input?.text, 2500), input?.tone)));
     addHandler('assistant:speak-stream', (input, sender) => onlyOne(async () => {

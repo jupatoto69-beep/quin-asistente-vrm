@@ -86,7 +86,7 @@ export function reachHandGesture(joints, gesture, point, strength) {
   arm.upper.getWorldPosition(shoulder);
   if (gesture.kind === 'point') {
     if (!point) return null;
-    aim.set(point.x, point.y, shoulder.z + length * 0.42);
+    aim.copy(point.position).addScaledVector(point.normal, shoulder.dot(point.normal) + length * 0.42);
     direction.copy(aim).sub(shoulder).normalize();
     if (direction.y > 0.55 && direction.x * viewSide < 0.28) direction.x = viewSide * 0.28;
     target.copy(shoulder).addScaledVector(direction.normalize(), length * 0.92);

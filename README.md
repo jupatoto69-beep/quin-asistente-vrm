@@ -1,11 +1,11 @@
-# Quin · v0.7.0
+# Quin · v0.8.0
 
 Quin es mi asistente de escritorio para Windows con avatar VRM y conversación local en español.
 
-## Activación y conversación seguida
+## Giro, zoom y apariencia por avatar
 
-- Con «Oye, Quin» se puede abrir la charla. Si solo oye su nombre, contesta con una frase corta antes de escuchar.
-- Quin vuelve a escuchar al terminar su respuesta. Probé el reconocimiento con Whisper Turbo en la GPU y el formato de hora de 12 horas.
+- Añadí el giro al arrastrar, el zoom con la rueda y el restablecimiento de la vista.
+- La descripción se guarda por archivo VRM. Quin puede describir el avatar activo y aprender una descripción nueva.
 
 ## Instalación
 

@@ -53,6 +53,7 @@ let wakeReplies = [];
 let lastWakeReply;
 let wakePlayback;
 let avatar;
+let avatarId;
 let replyText;
 let speakingTone;
 let speakingReaction;
@@ -223,7 +224,7 @@ async function answer(text) {
   let reply;
   let acted = false;
   try {
-    reply = await api.chat(text, avatar?.capabilities());
+    reply = await api.chat(text, avatar?.capabilities(), avatarId);
     if (reply.action) {
       update('gesturing');
       const performed = await avatar?.gesture(reply.action) ?? false;
@@ -449,7 +450,7 @@ file.addEventListener('change', async () => {
   pick.disabled = resetAvatar.disabled = true;
   try {
     const data = await selected.arrayBuffer();
-    await avatar.load(data);
+    await loadDisplayedAvatar(data);
     avatarNote.hidden = true;
     resetAvatar.hidden = false;
     try {
@@ -464,10 +465,16 @@ file.addEventListener('change', async () => {
   }
 });
 
+async function loadDisplayedAvatar(data) {
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', data));
+  await avatar.load(data);
+  avatarId = Array.from(hash, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 async function loadSample() {
   const response = await fetch('/avatar.vrm');
   if (!response.ok) throw new Error('No está el avatar de muestra.');
-  await avatar.load(await response.arrayBuffer());
+  await loadDisplayedAvatar(await response.arrayBuffer());
 }
 
 function controlPosition(id) {
@@ -516,7 +523,7 @@ async function initialize() {
       try {
         const custom = await fetch('/avatar-personal.vrm');
         if (!custom.ok) throw new Error('El avatar guardado no está disponible.');
-        await avatar.load(await custom.arrayBuffer());
+        await loadDisplayedAvatar(await custom.arrayBuffer());
         avatarNote.hidden = true;
         return;
       } catch {

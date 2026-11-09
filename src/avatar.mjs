@@ -99,11 +99,13 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setClearColor(0x000000, 0);
   renderer.setSize(stage.clientWidth, stage.clientHeight, false);
-  renderer.domElement.tabIndex = 0;
-  renderer.domElement.setAttribute('role', 'button');
-  renderer.domElement.setAttribute('aria-label', 'Tocar a Quin');
-  renderer.domElement.title = 'Haz clic para que Quin reaccione';
-  stage.prepend(renderer.domElement);
+  const canvas = renderer.domElement;
+  canvas.tabIndex = 0;
+  canvas.setAttribute('role', 'button');
+  canvas.setAttribute('aria-label', 'Tocar a Quin');
+  canvas.setAttribute('aria-description', 'Arrastra para girar, usa la rueda para acercar y pulsa Inicio para restablecer la vista.');
+  canvas.title = 'Clic para saludar · Arrastra para girar · Rueda para acercar · Doble clic para restablecer';
+  stage.prepend(canvas);
 
   const scene = new THREE.Scene();
   const anchor = new THREE.Group();
@@ -116,6 +118,14 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   camera.position.z = 6;
   let width = 1;
   let height = 2;
+  let fittedHalfWidth = 1;
+  let fittedHalfHeight = 1;
+  let distance = 6;
+  let yaw = 0;
+  let zoom = 1;
+  const viewCenter = new THREE.Vector2();
+  let orbitPointer;
+  let suppressTap = false;
   let avatar;
   let bones;
   let pointer = { x: 0, y: 0 };
@@ -130,7 +140,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   let last = performance.now();
   let seconds = 0;
   let nextBlink = 2.5;
-  const aimedPoint = new THREE.Vector2();
+  const aimTarget = { position: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1) };
 
   function stageTarget(name) {
     if (name === 'cursor') return { x: (pointer.x + 1) / 2, y: (pointer.y + 1) / 2 };
@@ -141,20 +151,47 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
     if (!name) return null;
     const point = stageTarget(name);
     if (!point) return null;
-    return aimedPoint.set(THREE.MathUtils.lerp(camera.left, camera.right, point.x),
-      THREE.MathUtils.lerp(camera.top, camera.bottom, point.y));
+    aimTarget.position.set(THREE.MathUtils.lerp(camera.left, camera.right, point.x),
+      THREE.MathUtils.lerp(camera.top, camera.bottom, point.y), 0).applyQuaternion(camera.quaternion);
+    return aimTarget;
+  }
+
+  function orientCamera() {
+    aimTarget.normal.set(Math.sin(yaw), 0, Math.cos(yaw));
+    camera.position.copy(aimTarget.normal).multiplyScalar(distance);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+  }
+
+  function updateProjection() {
+    const halfWidth = fittedHalfWidth / zoom;
+    const halfHeight = fittedHalfHeight / zoom;
+    const limitX = Math.max(0, fittedHalfWidth - halfWidth);
+    const limitY = Math.max(0, fittedHalfHeight - halfHeight);
+    viewCenter.x = THREE.MathUtils.clamp(viewCenter.x, -limitX, limitX);
+    viewCenter.y = THREE.MathUtils.clamp(viewCenter.y, -limitY, limitY);
+    camera.left = viewCenter.x - halfWidth;
+    camera.right = viewCenter.x + halfWidth;
+    camera.top = viewCenter.y + halfHeight;
+    camera.bottom = viewCenter.y - halfHeight;
+    camera.updateProjectionMatrix();
+  }
+
+  function resetView() {
+    yaw = 0;
+    zoom = 1;
+    viewCenter.set(0, 0);
+    orientCamera();
+    updateProjection();
   }
 
   function frameAvatar() {
     const w = Math.max(1, stage.clientWidth);
     const h = Math.max(1, stage.clientHeight);
     const aspect = w / h;
-    const halfHeight = Math.max(height * 0.62, width * 0.55 / aspect);
-    camera.left = -halfHeight * aspect;
-    camera.right = halfHeight * aspect;
-    camera.top = halfHeight;
-    camera.bottom = -halfHeight;
-    camera.updateProjectionMatrix();
+    fittedHalfHeight = Math.max(height * 0.62, width * 0.55 / aspect);
+    fittedHalfWidth = fittedHalfHeight * aspect;
+    updateProjection();
     renderer.setSize(w, h, false);
   }
 
@@ -237,16 +274,63 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
     }
     for (const leg of joints.legs) for (const node of [leg.thigh, leg.shin, leg.foot]) controlled.add(node);
     joints.idle = createIdlePlayer(avatar, await idleClips, controlled);
-    width = size.x;
+    width = Math.hypot(size.x, size.z);
     height = size.y;
+    distance = Math.max(6, size.length());
+    camera.far = Math.max(50, distance * 3);
     gaze.position.set(0, height * 0.40, 2.1 * height);
     if (avatar.lookAt) avatar.lookAt.target = gaze;
     frameAvatar();
+    resetView();
   }
 
   stage.addEventListener('pointermove', (event) => aimAt(event.clientX, event.clientY));
-  renderer.domElement.addEventListener('click', () => motion.tap());
-  renderer.domElement.addEventListener('keydown', (event) => {
+  canvas.addEventListener('pointerdown', (event) => {
+    if (!avatar || event.button !== 0 || orbitPointer) return;
+    orbitPointer = { id: event.pointerId, x: event.clientX, y: event.clientY, yaw };
+    suppressTap = false;
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointermove', (event) => {
+    if (orbitPointer?.id !== event.pointerId) return;
+    const dx = event.clientX - orbitPointer.x;
+    if (!suppressTap && Math.hypot(dx, event.clientY - orbitPointer.y) < 5) return;
+    suppressTap = true;
+    canvas.classList.add('orbiting');
+    yaw = (orbitPointer.yaw - dx * 0.012) % (2 * Math.PI);
+    orientCamera();
+  });
+  function endOrbit(event) {
+    if (orbitPointer?.id !== event.pointerId) return;
+    orbitPointer = undefined;
+    canvas.classList.remove('orbiting');
+  }
+  canvas.addEventListener('pointerup', endOrbit);
+  canvas.addEventListener('pointercancel', endOrbit);
+  canvas.addEventListener('lostpointercapture', endOrbit);
+  canvas.addEventListener('click', (event) => {
+    if (event.detail === 0 || (!suppressTap && event.detail === 1)) motion.tap();
+  });
+  canvas.addEventListener('dblclick', () => { if (!suppressTap) resetView(); });
+  canvas.addEventListener('wheel', (event) => {
+    if (!avatar || event.deltaY === 0) return;
+    event.preventDefault();
+    const box = canvas.getBoundingClientRect();
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? box.height : 1;
+    const next = THREE.MathUtils.clamp(zoom * Math.exp(-event.deltaY * unit * 0.0025), 0.72, 3);
+    if (next === zoom) return;
+    const delta = 1 / zoom - 1 / next;
+    viewCenter.x += ((event.clientX - box.left) / Math.max(1, box.width) * 2 - 1) * fittedHalfWidth * delta;
+    viewCenter.y += (1 - (event.clientY - box.top) / Math.max(1, box.height) * 2) * fittedHalfHeight * delta;
+    zoom = next;
+    updateProjection();
+  }, { passive: false });
+  canvas.addEventListener('keydown', (event) => {
+    if (event.key === 'Home') {
+      event.preventDefault();
+      resetView();
+      return;
+    }
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     if (!event.repeat) motion.tap();
@@ -266,7 +350,8 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
       }).catch(() => {}).finally(() => { cursorPending = false; });
     }
     const { state, tone, reaction } = activity();
-    const focus = 1 - 0.72 * THREE.MathUtils.clamp((seconds - lastPointerMove - 1.2) / 2, 0, 1);
+    const focus = Math.max(0, aimTarget.normal.z) *
+      (1 - 0.72 * THREE.MathUtils.clamp((seconds - lastPointerMove - 1.2) / 2, 0, 1));
     const p = motion.step(seconds, dt, state, tone, reaction, mouthLevel(), {
       x: pointer.x * focus, y: pointer.y * focus,
     }, reducedMotion.matches);
@@ -327,7 +412,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
       if (cue.kind !== 'point') return motion.gesture(cue, waitEnd);
       const point = stageTarget(cue.target);
       if (!point) return false;
-      const viewSide = point.x < 0.5 ? -1 : 1;
+      const viewSide = (point.x < 0.5 ? -1 : 1) * (aimTarget.normal.z < 0 ? -1 : 1);
       const preferred = leftArm?.side * bones.axis === viewSide ? -1 : 1;
       const side = hasFinger(preferred < 0 ? leftArm : rightArm, 'Index') ? preferred : -preferred;
       return motion.gesture({ ...cue, side }, waitEnd);
