@@ -2,7 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('assistant', {
   ready: () => ipcRenderer.invoke('assistant:ready'),
-  chat: (text) => ipcRenderer.invoke('assistant:chat', text),
+  chat: (text, body) => ipcRenderer.invoke('assistant:chat', { text, body }),
+  gestureResult: (id, performed) => ipcRenderer.invoke('assistant:gesture-result', { id, performed }),
   onReplyChunk: (callback) => ipcRenderer.on('assistant:reply-chunk', (_event, chunk) => callback(chunk)),
   speak: (text, tone) => ipcRenderer.invoke('assistant:speak', { text, tone }),
   speakStream: (text, tone) => ipcRenderer.invoke('assistant:speak-stream', { text, tone }),

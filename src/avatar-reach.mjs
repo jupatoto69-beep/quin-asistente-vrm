@@ -54,16 +54,41 @@ const pole = new Vector3();
 const restingWrist = new Vector3();
 const restingElbow = new Vector3();
 const shoulder = new Vector3();
+const armGoals = {
+  arriba: [0.31, 0.86, 0.15], abajo: [0.07, -0.92, 0.09], adelante: [0.16, -0.13, 0.88],
+  atras: [0.17, -0.65, -0.38], lado: [0.88, -0.02, 0.10],
+};
+
+export function followArmPath(arm, goal, elbowPole, axis, weight) {
+  arm.hand.getWorldPosition(restingWrist);
+  goal.lerpVectors(restingWrist, goal, weight);
+  // Keep the approach outside the body before arriving at the final pose.
+  const clearance = Math.sin(Math.PI * weight) * arm.reach.length;
+  goal.x += arm.side * axis * clearance * 0.30;
+  goal.z += clearance * 0.24;
+  restingElbow.copy(arm.lower.position).applyQuaternion(arm.upper.quaternion).normalize();
+  elbowPole.normalize().lerpVectors(restingElbow, elbowPole, weight);
+  arm.reach.apply(goal, elbowPole, 1);
+}
 
 export function applyReach(joints, gesture, weight) {
-  if (!joints.head || weight < 0.001) return;
+  if (!joints.head || weight < 0.001) return false;
   const { leftArm, rightArm, axis } = joints;
-  const { kind, side, sweep } = gesture;
+  const { kind, side, sweep, direction, extent } = gesture;
   const leading = side < 0 ? leftArm : rightArm;
-  for (const arm of kind === 'stretch' ? [leftArm, rightArm] : [leading]) {
+  let moved = false;
+  const both = kind === 'stretch' || kind === 'arm' && side === 0;
+  for (const arm of both ? [leftArm, rightArm] : [leading]) {
     if (!arm?.reach) continue;
     const { length } = arm.reach;
-    if (kind === 'hair') {
+    if (kind === 'arm') {
+      const [x, y, z] = armGoals[direction];
+      arm.upper.getWorldPosition(target);
+      target.x += x * arm.side * axis * length * extent;
+      target.y += y * length * extent - length * (1 - extent) * 0.67;
+      target.z += z * length * extent;
+      pole.set(arm.side, -0.32, axis * 0.32);
+    } else if (kind === 'hair') {
       target.set(arm.side * length * (0.29 + sweep * 0.025),
         length * (0.19 + sweep * 0.08), axis * length * (0.17 - sweep * 0.07));
       joints.head.localToWorld(target);
@@ -74,16 +99,10 @@ export function applyReach(joints, gesture, weight) {
       joints.head.localToWorld(target);
       pole.set(arm.side, -0.19, axis * 0.40);
     }
-    arm.hand.getWorldPosition(restingWrist);
-    target.lerpVectors(restingWrist, target, weight);
-    // The wrist arcs forward and outward on its way to the target.
-    const clearance = Math.sin(Math.PI * weight) * length;
-    target.x += arm.side * axis * clearance * 0.30;
-    target.z += clearance * 0.24;
-    restingElbow.copy(arm.lower.position).applyQuaternion(arm.upper.quaternion).normalize();
-    pole.normalize().lerpVectors(restingElbow, pole, weight);
-    arm.reach.apply(target, pole, 1);
+    followArmPath(arm, target, pole, axis, weight);
+    moved = true;
   }
+  return moved;
 }
 
 export function clearTorso(joints) {

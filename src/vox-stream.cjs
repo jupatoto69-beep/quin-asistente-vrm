@@ -24,7 +24,7 @@ function validHeader(header) {
     header.readUInt16LE(34) === 32 && header.toString('ascii', 36, 40) === 'data';
 }
 
-function createVoxStream(executable, base, acoustic, reference, shutdown) {
+function createVoxStream(executable, base, acoustic, reference, shutdown, alternate = reference) {
   let child;
   let starting;
   let address;
@@ -77,6 +77,10 @@ function createVoxStream(executable, base, acoustic, reference, shutdown) {
           await response.json();
           const warm = await request(url, '/v1/audio/conditioning/warm', { reference_audio_path: reference }, 8_000);
           if (!warm.ok || !(await warm.json()).ok) throw new Error('No se pudo preparar la referencia de Pícara.');
+          if (alternate !== reference) {
+            await request(url, '/v1/audio/conditioning/warm', { reference_audio_path: alternate }, 8_000)
+              .then((response) => response.json()).catch(() => {});
+          }
           if (child !== process) break;
           address = url;
           expireAfterIdle();
@@ -97,12 +101,12 @@ function createVoxStream(executable, base, acoustic, reference, shutdown) {
     return starting;
   }
 
-  async function speak(text, control, onChunk) {
+  async function speak(text, control, onChunk, sample = reference) {
     const url = await warm();
     clearTimeout(idle);
     try {
       const response = await request(url, '/v1/audio/speech/stream', {
-        input: text, control, reference_audio_path: reference,
+        input: text, control, reference_audio_path: sample,
         seed: 306, gain: 0.6, inference_timesteps: 6, max_steps: 200,
       }, 75_000);
       if (!response.ok || !response.body) throw new Error('VoxGen no pudo iniciar el audio.');

@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.5.0 · Manos y órdenes de movimiento
+
+- Añadí dedos independientes, señalamiento, saludos y pulgar arriba. Quin puede mover los brazos, levantar un pie, agacharse y bailar.
+- Pasé las órdenes a movimientos validados contra el VRM cargado. Las secuencias admiten hasta tres pasos.
+
 ## v0.4.0 · Animaciones de reposo y apoyo de pies
 
 - Mezclé animaciones VRMA de reposo con gestos procedurales de respiración, estiramiento y movimiento del cabello.

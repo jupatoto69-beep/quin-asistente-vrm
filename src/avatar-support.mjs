@@ -1,26 +1,6 @@
 import { Quaternion, Vector3 } from 'three';
 import { createLimbReach } from './avatar-reach.mjs';
 
-const down = new Vector3(0, -1, 0);
-
-export function fingerRig(get, side) {
-  const fingers = [];
-  for (const [index, finger] of ['Index', 'Middle', 'Ring', 'Little', 'Thumb'].entries()) {
-    const names = finger === 'Thumb' ? ['Metacarpal', 'Proximal', 'Distal'] : ['Proximal', 'Intermediate', 'Distal'];
-    const nodes = names.map((segment) => get(side + finger + segment));
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      if (!node) continue;
-      const direction = nodes[i + 1]?.position ?? node.position;
-      const axis = direction.clone().cross(down);
-      if (axis.lengthSq() < 1e-8) continue;
-      const curl = (finger === 'Thumb' ? 0.35 : 0.84 + index * 0.12) * [1, 0.72, 0.49][i];
-      fingers.push({ node, axis: axis.normalize(), curl });
-    }
-  }
-  return fingers;
-}
-
 export function legRig(get, side, axis) {
   const thigh = get(side + 'UpperLeg');
   const shin = get(side + 'LowerLeg');
@@ -30,7 +10,8 @@ export function legRig(get, side, axis) {
   return {
     thigh, shin, foot, reach, side, toes: get(side + 'Toes'),
     pole: new Vector3((side === 'left' ? 1 : -1) * axis * 0.10, 0, axis),
-    plant: new Vector3(), pivot: new Vector3(), footRotation: new Quaternion(), heel: 0,
+    plant: new Vector3(), pivot: new Vector3(), footRotation: new Quaternion(),
+    heel: 0, lift: 0, forward: 0, lateral: 0,
   };
 }
 
@@ -47,15 +28,38 @@ const worldX = new Vector3(1, 0, 0);
 const ankle = new Vector3();
 const pitch = new Quaternion();
 const parentRotation = new Quaternion();
+const measured = new Vector3();
+
+function settle(value, goal, blend) {
+  const next = value + (goal - value) * blend;
+  return goal === 0 && Math.abs(next) < 0.001 ? 0 : next;
+}
 
 export function plantFeet(legs, pose, blend) {
+  const plan = pose.foot;
+  const support = plan && legs.find((leg) => leg.side !== plan.side);
+  const planted = support && support.lift === 0 && support.forward === 0 && support.lateral === 0 && support.heel === 0;
   for (const leg of legs) {
-    const heel = pose.heel?.side === leg.side ? pose.heel.amount : 0;
-    leg.heel += (heel - leg.heel) * blend;
+    const moving = planted && plan.side === leg.side;
+    const heel = !plan && pose.heel?.side === leg.side ? pose.heel.amount : 0;
+    leg.heel = settle(leg.heel, heel, blend);
+    leg.lift = settle(leg.lift, moving ? plan.lift * plan.amount : 0, blend);
+    leg.forward = settle(leg.forward, moving ? plan.forward * plan.amount : 0, blend);
+    leg.lateral = settle(leg.lateral, moving ? (plan.lateral ?? 0) * plan.amount : 0, blend);
     pitch.setFromAxisAngle(worldX, leg.heel);
     ankle.copy(leg.plant).sub(leg.pivot).applyQuaternion(pitch).add(leg.pivot);
+    ankle.y += leg.lift * leg.reach.length;
+    ankle.z += leg.forward * leg.reach.length;
+    ankle.x += leg.lateral * leg.reach.length;
     leg.reach.apply(ankle, leg.pole, 1);
+    pitch.setFromAxisAngle(worldX, leg.heel + leg.lift * 0.37);
     leg.shin.getWorldQuaternion(parentRotation);
     leg.foot.quaternion.copy(parentRotation.invert()).multiply(pitch).multiply(leg.footRotation);
   }
+  if (!planted || plan.amount < 0.75) return false;
+  const raised = legs.find((leg) => leg.side === plan.side);
+  if (!raised || support.foot.getWorldPosition(measured).distanceTo(support.plant) > support.reach.length * 0.004) {
+    return false;
+  }
+  return raised.foot.getWorldPosition(measured).y - raised.plant.y >= plan.lift * raised.reach.length * 0.68;
 }

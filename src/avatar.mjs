@@ -3,7 +3,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { createMotion, restPose } from './avatar-motion.mjs';
 import { createLimbReach, applyReach, clearTorso } from './avatar-reach.mjs';
-import { capturePlants, fingerRig, legRig, plantFeet } from './avatar-support.mjs';
+import { capturePlants, legRig, plantFeet } from './avatar-support.mjs';
+import { aimHand, fingerRig, reachHandGesture, relaxFingers, shapeHand } from './avatar-hands.mjs';
 import { createIdlePlayer, loadIdleClips } from './avatar-idle.mjs';
 
 function armRig(get, name, defaultSide) {
@@ -24,7 +25,7 @@ function armRig(get, name, defaultSide) {
 
 const angles = new THREE.Vector3();
 
-function applyPose(joints, p, blend, dt = 0) {
+function applyPose(joints, p, blend, dt = 0, time = 0, resolveAim) {
   const rotate = (node, x, y, z) => {
     if (!node) return;
     const base = joints.bodyAngles.get(node);
@@ -47,7 +48,7 @@ function applyPose(joints, p, blend, dt = 0) {
     arm.upper.rotation.setFromVector3(arm.upperAngles);
     arm.lower.rotation.setFromVector3(arm.lowerAngles);
     arm.hand?.rotation.set(0, 0, arm.side * arm.wrist);
-    for (const finger of arm.fingers) finger.node.quaternion.setFromAxisAngle(finger.axis, arm.curl * finger.curl);
+    for (const { node } of arm.fingers) node.quaternion.identity();
   }
   for (const leg of joints.legs) {
     leg.thigh.quaternion.identity();
@@ -55,23 +56,45 @@ function applyPose(joints, p, blend, dt = 0) {
     leg.foot.quaternion.identity();
   }
   joints.idle?.apply(dt, p);
+  for (const arm of [leftArm, rightArm]) {
+    if (arm) relaxFingers(arm, time, 1 - p.idleBlend * 0.56);
+  }
+  let footMoved = false;
   if (joints.hipRest) {
     const { hips, hipRest, legLength } = joints;
     joints.hipShift += (p.hipShift - joints.hipShift) * blend;
     joints.hipDrop += (0.024 + p.hipDrop - joints.hipDrop) * blend;
+    joints.hipDepth += (p.hipDepth - joints.hipDepth) * blend;
     hips.position.set(hipRest.x + axis * joints.hipShift * legLength,
-      hipRest.y - joints.hipDrop * legLength, hipRest.z);
-    plantFeet(joints.legs, p, blend);
+      hipRest.y - joints.hipDrop * legLength, hipRest.z + axis * joints.hipDepth * legLength);
+    footMoved = plantFeet(joints.legs, p, blend);
   }
   const sameReach = p.reach && (joints.reachWeight < 0.04 ||
-    (p.reach.kind === joints.reach?.kind && p.reach.side === joints.reach?.side));
+    (p.reach.kind === joints.reach?.kind && p.reach.side === joints.reach?.side &&
+      p.reach.target === joints.reach?.target && p.reach.direction === joints.reach?.direction));
   if (sameReach) joints.reach = p.reach;
   joints.reachWeight += ((sameReach ? p.reach.strength : 0) - joints.reachWeight) * blend;
-  if (joints.reach) applyReach(joints, joints.reach, joints.reachWeight);
+  const gesture = joints.reach;
+  const directional = gesture?.kind === 'point' || gesture?.kind === 'thumb';
+  const aimArm = directional ? reachHandGesture(joints, gesture, resolveAim?.(gesture.target), joints.reachWeight) : null;
+  const moved = directional ? !!aimArm : gesture && applyReach(joints, gesture, joints.reachWeight);
   clearTorso(joints);
+  if (aimArm) aimHand(aimArm, gesture.kind, joints.reachWeight);
+  if (p.handShape) {
+    const { side, kind, strength, phase } = p.handShape;
+    if (side <= 0) shapeHand(leftArm, kind, strength, phase);
+    if (side >= 0 || side === undefined) shapeHand(rightArm, kind, strength, phase);
+  }
+  if (footMoved) return p.foot.kind;
+  return moved && joints.reachWeight >= (p.reduced ? 0.17 : 0.72) ? gesture.kind : undefined;
 }
 
-export function createAvatar(stage, activity, mouthLevel, getPointer) {
+const directions = {
+  izquierda: { x: -0.65, y: 0.37 }, derecha: { x: 1.65, y: 0.37 },
+  arriba: { x: 0.62, y: -0.62 }, abajo: { x: 0.63, y: 1.62 },
+};
+
+export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget) {
   const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setClearColor(0x000000, 0);
@@ -107,6 +130,20 @@ export function createAvatar(stage, activity, mouthLevel, getPointer) {
   let last = performance.now();
   let seconds = 0;
   let nextBlink = 2.5;
+  const aimedPoint = new THREE.Vector2();
+
+  function stageTarget(name) {
+    if (name === 'cursor') return { x: (pointer.x + 1) / 2, y: (pointer.y + 1) / 2 };
+    return directions[name] ?? getTarget?.(name);
+  }
+
+  function resolveAim(name) {
+    if (!name) return null;
+    const point = stageTarget(name);
+    if (!point) return null;
+    return aimedPoint.set(THREE.MathUtils.lerp(camera.left, camera.right, point.x),
+      THREE.MathUtils.lerp(camera.top, camera.bottom, point.y));
+  }
 
   function frameAvatar() {
     const w = Math.max(1, stage.clientWidth);
@@ -159,7 +196,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer) {
     const head = get('head');
     const joints = {
       axis: leftSide,
-      reachWeight: 0, hipShift: 0, hipDrop: 0,
+      reachWeight: 0, hipShift: 0, hipDrop: 0, hipDepth: 0,
       hips, chest, head, bodyAngles: new Map([hips, chest, head].map((node) => [node, new THREE.Vector3()])),
       leftArm: armRig(get, 'left', leftSide),
       rightArm: armRig(get, 'right', -leftSide),
@@ -234,7 +271,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer) {
       x: pointer.x * focus, y: pointer.y * focus,
     }, reducedMotion.matches);
     const blend = 1 - Math.exp(-dt * 9);
-    applyPose(bones, p, blend, dt);
+    const reached = applyPose(bones, p, blend, dt, seconds, resolveAim);
     gaze.position.x += (p.gazeX * height * 0.62 - gaze.position.x) * blend;
     gaze.position.y += ((0.40 - p.gazeY * 0.42) * height - gaze.position.y) * blend;
     const blinkTime = seconds - nextBlink;
@@ -249,8 +286,62 @@ export function createAvatar(stage, activity, mouthLevel, getPointer) {
     face?.setValue('aa', p.mouth);
     avatar.update(dt);
     renderer.render(scene, camera);
+    motion.rendered(reached);
   });
+  function hasFinger(arm, name) {
+    return !!arm?.reach && arm.fingers.some((finger) => finger.name === name && finger.segment === 2);
+  }
 
-    return { load, reply:
-   (tone, reaction) => motion.reply(tone, reaction) };
+  function capabilities() {
+    if (!bones) return [];
+    const { leftArm, rightArm, head } = bones;
+    const actions = [];
+    if (hasFinger(leftArm, 'Index') || hasFinger(rightArm, 'Index')) actions.push('point');
+    if (hasFinger(leftArm, 'Thumb') || hasFinger(rightArm, 'Thumb')) actions.push('thumb');
+    if (rightArm?.hand) actions.push('wave');
+    if (leftArm?.reach || rightArm?.reach) actions.push('raise', 'hair', 'arm');
+    if (leftArm?.fingers.length || rightArm?.fingers.length) actions.push('hands');
+    if (leftArm?.reach && rightArm?.reach) actions.push('stretch');
+    if (head) actions.push('nod', 'shake');
+    if (head || bones.chest || bones.hips) actions.push('body');
+    if (bones.hipRest && bones.legs.length === 2) actions.push('leg', 'crouch', 'dance');
+    return actions;
+  }
+
+  async function perform(cue, waitEnd) {
+      if (!capabilities().includes(cue.kind)) return false;
+      const { leftArm, rightArm } = bones;
+      const arm = cue.side < 0 ? leftArm : rightArm;
+      if (cue.kind === 'thumb' && !hasFinger(arm, 'Thumb')) return false;
+      if (cue.kind === 'raise' && !arm?.reach) return false;
+      if (cue.kind === 'arm' && (cue.side === 0 ? !leftArm?.reach || !rightArm?.reach : !arm?.reach)) return false;
+      if (cue.kind === 'hands' && (cue.side === 0 ? !leftArm?.fingers.length || !rightArm?.fingers.length : !arm?.fingers.length)) return false;
+      if (cue.kind === 'body') {
+        const part = { head: bones.head, torso: bones.chest, hips: bones.hips, shoulders: leftArm || rightArm };
+        if (!part[cue.part]) return false;
+      }
+      if (cue.kind === 'hair') {
+        const side = leftArm?.reach && rightArm?.reach ? undefined : leftArm?.reach ? -1 : 1;
+        return motion.gesture({ ...cue, side }, waitEnd);
+      }
+      if (cue.kind !== 'point') return motion.gesture(cue, waitEnd);
+      const point = stageTarget(cue.target);
+      if (!point) return false;
+      const viewSide = point.x < 0.5 ? -1 : 1;
+      const preferred = leftArm?.side * bones.axis === viewSide ? -1 : 1;
+      const side = hasFinger(preferred < 0 ? leftArm : rightArm, 'Index') ? preferred : -preferred;
+      return motion.gesture({ ...cue, side }, waitEnd);
+  }
+
+
+  return {
+    load, capabilities, reply: (tone, reaction) => motion.reply(tone, reaction),
+    async gesture(cue) {
+      if (cue.kind !== 'sequence') return perform(cue, false);
+      for (const step of cue.steps) {
+        if (!await perform(step, true)) return false;
+      }
+      return true;
+    },
+  };
 }

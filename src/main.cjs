@@ -18,6 +18,7 @@ const resources = new Map([
   ['/avatar.vrm', 'assets/avatar.vrm'],
   ['/movimiento/idle.vrma', 'assets/movimiento/idle.vrma'],
   ['/movimiento/idle-3.vrma', 'assets/movimiento/idle-3.vrma'],
+  ['/muestra-picara.wav', 'assets/voz-picara-muestra.wav'],
 ]);
 for (const tone of Object.keys(tones)) {
   if (liveSamples.has(tone)) continue;
@@ -159,9 +160,10 @@ if (!app.requestSingleInstanceLock()) {
         details.mediaTypes?.length === 1 && details.mediaTypes[0] === 'audio'));
     });
     addHandler('assistant:ready', () => services.ready);
-    addHandler('assistant:chat', (input, sender) => onlyOne(() => services.chat(validText(input, 1200), (chunk) => {
+    addHandler('assistant:chat', (input, sender) => onlyOne(() => services.chat(validText(input?.text, 1200), (chunk) => {
       if (!sender.isDestroyed()) sender.send('assistant:reply-chunk', chunk);
-    })));
+    }, Array.isArray(input?.body) ? input.body : [])));
+    addHandler('assistant:gesture-result', (input) => onlyOne(() => services.confirmGesture(input?.id, input?.performed)));
     addHandler('assistant:speak', (input) => onlyOne(() => services.speak(validText(input?.text, 2500), input?.tone)));
     addHandler('assistant:speak-stream', (input, sender) => onlyOne(async () => {
       const result = await services.speakStream(validText(input?.text, 2500), input?.tone, (chunk) => {

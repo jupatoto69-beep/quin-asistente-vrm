@@ -3,6 +3,7 @@ import { createStreamPlayer, record, toWhisperWav } from './audio.mjs';
 import { tones, liveSamples, validTone, speechText, speechReaction } from './voice.cjs';
 import { initializeMemoryPanel } from './memory-panel.mjs';
 import { initializeProfilePanel } from './profile-panel.mjs';
+import { handCue } from './hand-cues.cjs';
 
 const api = window.assistant;
 initializeProfilePanel(api);
@@ -34,6 +35,7 @@ const labels = {
   transcribing: 'Transcribiendo con Whisper…',
   thinking: 'Pensando con Qwen3…',
   responding: 'Escribiendo respuesta…',
+  gesturing: 'Moviéndose…',
   preparing: 'Preparando la voz…',
   speaking: 'Hablando',
 };
@@ -157,7 +159,7 @@ async function speak(text, tone, preview = false) {
   update('preparing');
   try {
     await unlockAudio();
-    if (preview && !liveSamples.has(tone) && ready.voiceSamples) {
+    if (preview && (tone === 'picara' ? ready.picaraSample : !liveSamples.has(tone) && ready.voiceSamples)) {
       const response = await fetch(`/muestra-${tone}.wav`);
       if (!response.ok) throw new Error('No se pudo abrir la muestra de voz.');
       await play(new Uint8Array(await response.arrayBuffer()), speakingTone);
@@ -178,8 +180,15 @@ async function answer(text) {
   update('thinking');
   const userText = addMessage('Tú', text);
   let reply;
+  let acted = false;
   try {
-    reply = await api.chat(text);
+    reply = await api.chat(text, avatar?.capabilities());
+    if (reply.action) {
+      update('gesturing');
+      const performed = await avatar?.gesture(reply.action) ?? false;
+      reply = await api.gestureResult(reply.actionId, performed);
+      acted = true;
+    }
     if (replyText) replyText.data = reply.text;
     else replyText = addMessage('Quin', reply.text);
     if (reply.memoryId && userText.parentElement && replyText.parentElement) {
@@ -190,6 +199,8 @@ async function answer(text) {
   } finally {
     replyText = undefined;
   }
+  const cue = acted ? null : handCue(text, reply.text);
+  if (cue) avatar?.gesture(cue);
   if (voice.checked && ready.speak) {
     await speak(reply.text, reply.tone);
   } else {
@@ -317,6 +328,16 @@ async function loadSample() {
   await avatar.load(await response.arrayBuffer());
 }
 
+function controlPosition(id) {
+  const control = byId(id);
+  if (!control?.getClientRects().length) return null;
+  const area = stage.getBoundingClientRect();
+  const box = control.getBoundingClientRect();
+  if (!area.width || !area.height) return null;
+  return { x: (box.left + box.width / 2 - area.left) / area.width,
+    y: (box.top + box.height / 2 - area.top) / area.height };
+}
+
 resetAvatar.addEventListener('click', async () => {
   pick.disabled = resetAvatar.disabled = true;
   try {
@@ -347,7 +368,7 @@ async function initialize() {
   try {
     avatar = createAvatar(stage, () => ({
       state, tone: speakingTone, reaction: speakingReaction,
-    }), mouthLevel, api.pointer);
+    }), mouthLevel, api.pointer, controlPosition);
     if (hasAvatar) {
       resetAvatar.hidden = false;
       try {

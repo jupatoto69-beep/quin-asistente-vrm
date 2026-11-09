@@ -1,6 +1,9 @@
+import { dance, moveBody, strengthFor } from './avatar-body-moves.mjs';
+
 const idleGestures = ['hair', 'stretch', 'weightShift', 'glance', 'curiosity', 'oops'];
 const tapGestures = ['wave', 'hair', 'curiosity', 'oops'];
 const thinkingStates = new Set(['transcribing', 'thinking', 'responding', 'preparing']);
+const reachingGestures = new Set(['point', 'thumb', 'raise', 'hair', 'stretch', 'leg', 'arm', 'dance']);
 
 const stances = [
   { leftLift: 0.02, rightLift: -0.03, leftBend: 0.22, rightBend: 0.31, leftElbow: 0.24, rightElbow: 0.35, lean: 0.025 },
@@ -25,6 +28,58 @@ const delivery = {
 };
 
 const gestures = {
+  dance: { duration: 7.8, ramp: 0.105, hold: true, arms: true, move(p, a, phase, side, target, plan) {
+    dance(p, a, phase, plan.tempo);
+    p.foot.kind = 'dance';
+  } },
+  crouch: { duration: 3.0, hold: true, move(p, a, phase, side, target, plan) {
+    const amount = a * strengthFor(plan.intensity);
+    p.hipDrop += amount * 0.21;
+    p.hipDepth -= amount * 0.09;
+    p.chestX -= amount * 0.28;
+    p.headX += amount * 0.11;
+    p.leftElbow += amount * 0.38;
+    p.rightElbow += amount * 0.38;
+  } },
+  body: { duration: 2.65, hold: true, move(p, a, phase, side, target, plan) {
+    moveBody(p, a, plan);
+  } },
+  arm: { duration: 3.1, hold: true, arms: true, move(p, a, phase, side, target, plan) {
+    p.reach = { kind: 'arm', side, strength: a, direction: plan.direction, extent: strengthFor(plan.intensity) };
+  } },
+  hands: { duration: 2.8, hold: true, arms: true, move(p, a, phase, side, target, plan) {
+    p.handShape = { kind: plan.wiggle ? 'wiggle' : plan.closed ? 'fist' : 'open', strength: a, side, phase };
+    if (side <= 0) p.leftBend += 0.57 * a;
+    if (side >= 0) p.rightBend += 0.57 * a;
+  } },
+  leg: { duration: 3.7, move(p, a, phase, side, target, plan) {
+    const scale = p.reduced ? 0.48 : 1;
+    const support = ease(Math.min(phase / 0.23, (1 - phase) / 0.17)) * scale;
+    const amount = ease((phase - 0.15) / 0.25) * ease((0.91 - phase) / 0.26);
+    p.hipShift += side * support * 0.083;
+    p.hipDrop += support * 0.011;
+    p.hipsZ += side * support * 0.036;
+    p.chestZ -= side * support * 0.055;
+    p.headX += amount * scale * 0.075;
+    p.foot = { kind: 'leg', side: side < 0 ? 'left' : 'right', lift: plan.lift * scale,
+      forward: plan.forward * scale, amount };
+  } },
+  point: { duration: 2.75, hold: true, arms: true, move(p, a, phase, side, target) {
+    p.reach = { kind: 'point', strength: a, target, side };
+    p.headY -= side * a * 0.12;
+    if (['arriba', 'memory-open', 'profile-open'].includes(target)) p.headX -= a * 0.08;
+    else if (target !== 'izquierda' && target !== 'derecha' && target !== 'cursor') p.headX += a * 0.12;
+  } },
+  thumb: { duration: 2.5, hold: true, arms: true, move(p, a, phase, side) {
+    p.reach = { kind: 'thumb', strength: a, side };
+    p.headX += a * 0.07;
+    p.face = 'happy';
+    p.expression = a * 0.34;
+  } },
+  raise: { duration: 2.6, hold: true, arms: true, move(p, a, phase, side) {
+    p.reach = { kind: 'raise', strength: a, sweep: 0.40, side };
+    p.handShape = { kind: 'open', strength: a, side };
+  } },
   hair: { duration: 4.05, hold: true, arms: true, move(p, a, phase, side) {
     p.reach = { kind: 'hair', strength: a, sweep: ease((phase - 0.31) / 0.38), side };
     p.headZ -= side * a * 0.13;
@@ -83,6 +138,7 @@ const gestures = {
     p.face = 'happy';
     p.expression = a * 0.55;
     p.rightCurl *= 1 - a * 0.65;
+    p.handShape = { kind: 'open', strength: a };
   } },
   ponder: { duration: 2.65, arms: true, move(p, a, phase, side) {
     p.headX -= a * 0.12;
@@ -92,6 +148,9 @@ const gestures = {
     p.rightForward += a * 0.31;
   } },
   nod: { duration: 0.85, move(p, a) { p.headX += a * 0.13; } },
+  shake: { duration: 1.2, move(p, a, phase) {
+    p.headY += Math.sin(phase * Math.PI * 4) * a * 0.26;
+  } },
   explain: { duration: 1.6, arms: true, move(p, a) {
     p.rightLift += a * 0.30;
     p.rightBend += a * 0.57;
@@ -121,7 +180,7 @@ const gestures = {
 
 export function restPose() {
   return {
-    hipsY: 0, hipsZ: 0, hipShift: 0, hipDrop: 0, chestX: 0, chestY: 0, chestZ: 0, headX: 0, headY: 0, headZ: 0,
+    hipsY: 0, hipsZ: 0, hipShift: 0, hipDrop: 0, hipDepth: 0, chestX: 0, chestY: 0, chestZ: 0, headX: 0, headY: 0, headZ: 0,
     leftLift: 0, rightLift: 0, leftBend: 0, rightBend: 0, leftForward: 0, rightForward: 0,
     leftElbow: 0, rightElbow: 0, leftWrist: 0, rightWrist: 0, leftCurl: 0, rightCurl: 0,
     face: 'happy', expression: 0, gazeX: 0, gazeY: 0, mouth: 0,
@@ -140,11 +199,18 @@ export function createMotion(random = Math.random) {
   let lastGesture;
   let active;
   let tapPending = false;
+  let handPending;
   let replyUntil = 0;
   let silentReply;
   let voiceBeat = 0;
 
+  function clearGesture(completed = false) {
+    active?.finish?.(completed && !!active.visible);
+    active = undefined;
+  }
+
   function start(name) {
+    clearGesture();
     active = { name, at: time, side: random() < 0.5 ? -1 : 1 };
     lastGesture = name;
   }
@@ -170,21 +236,33 @@ export function createMotion(random = Math.random) {
       : thinkingStates.has(state) ? 'thinking'
       : now < replyUntil ? 'reply' : 'idle';
     if (next !== mode) {
+      const keepGesture = active?.requested && (next === 'idle' || next === 'reply' || next === 'speaking' || state === 'preparing');
       mode = next;
       since = now;
-      active = undefined;
+      if (!keepGesture) clearGesture();
       nextMove = now + (mode === 'idle' ? 3.2 + random() * 2.1 : 0.30);
       if (mode === 'listening') start('nod');
-      if (mode === 'thinking') start('ponder');
+      if (mode === 'thinking' && !keepGesture) start('ponder');
     }
 
-    if (active && now >= active.at + gestures[active.name].duration) active = undefined;
+    if (active && now >= active.at + gestures[active.name].duration) clearGesture(true);
     const engaged = mode === 'speaking' || mode === 'reply';
     const activeTone = mode === 'reply' ? silentReply.tone : tone;
     const mood = delivery[activeTone] ?? delivery.dulce;
     const cue = mode === 'reply' ? silentReply.reaction : reaction;
+    if (handPending && (engaged || mode === 'idle')) {
+      start(handPending.kind);
+      active.requested = true;
+      active.target = handPending.target;
+      active.side = handPending.side ?? active.side;
+      active.plan = handPending.cue;
+      active.waitEnd = handPending.waitEnd;
+      active.finish = handPending.finish;
+      nextMove = now + gestures[active.name].duration + 1.3;
+      handPending = undefined;
+    }
     if (tapPending) {
-      if (mode === 'idle') {
+      if (mode === 'idle' && !active?.requested) {
         choose(tapGestures);
         nextMove = now + gestures[active.name].duration + 1.8;
       }
@@ -268,10 +346,11 @@ export function createMotion(random = Math.random) {
     if (active) {
       const gesture = gestures[active.name];
       const phase = (now - active.at) / gesture.duration;
-      const envelope = gesture.hold ? ease(Math.min(phase / 0.35, (1 - phase) / 0.35)) : Math.sin(phase * Math.PI) ** 2;
+      const ramp = gesture.ramp ?? 0.35;
+      const envelope = gesture.hold ? ease(Math.min(phase / ramp, (1 - phase) / ramp)) : Math.sin(phase * Math.PI) ** 2;
       const amount = envelope * (reduced ? 0.25 : 1);
       if (gesture.arms) p.armGesture = amount;
-      gesture.move(p, amount, phase, active.side);
+      gesture.move(p, amount, phase, active.side, active.target, active.plan);
     }
     return p;
   }
@@ -279,6 +358,27 @@ export function createMotion(random = Math.random) {
   return {
     step,
     tap: () => { tapPending = true; },
+    gesture(cue, waitEnd = false) {
+      handPending?.finish(false);
+      return new Promise((resolve) => {
+        const queued = { ...cue, cue, finish, waitEnd };
+        const timer = setTimeout(() => finish(false), Math.max(5500, gestures[cue.kind].duration * 1000 + 2400));
+        function finish(done) {
+          clearTimeout(timer);
+          if (handPending === queued) handPending = undefined;
+          if (active?.finish === finish) active.finish = undefined;
+          resolve(done);
+        }
+        handPending = queued;
+      });
+    },
+    rendered(reached) {
+      if (!active?.finish || time - active.at < gestures[active.name].duration * 0.36) return;
+      if (!reachingGestures.has(active.name) || reached === active.name) {
+        active.visible = true;
+        if (!active.waitEnd) active.finish(true);
+      }
+    },
     reply(tone, reaction) {
       silentReply = { tone, reaction };
       replyUntil = time + 1.65;

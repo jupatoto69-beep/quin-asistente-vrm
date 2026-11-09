@@ -44,18 +44,26 @@ def main():
     model = VoxCPM.from_pretrained(
         str(args.model.resolve()), load_denoiser=False, optimize=False, device="cuda",
     ).tts_model
-    with torch.inference_mode():
-        reference = model.build_prompt_cache(reference_wav_path=str(args.reference.resolve()))
+    references = {}
+
+    def get_reference(path):
+        key = Path(path or args.reference).resolve()
+        if key not in references:
+            with torch.inference_mode():
+                references[key] = model.build_prompt_cache(reference_wav_path=str(key))
+        return references[key]
+
+    get_reference(None)
     print(f"Modelo de emociones cargado en {time.perf_counter() - started:.1f} s", flush=True)
 
-    def synthesize(tone, text, output, control=None):
+    def synthesize(tone, text, output, control=None, reference_path=None):
         started = time.perf_counter()
         # The supplied audio anchors the speaker. The parenthetical text directs only the delivery.
         instruction = control or f"{DELIVERY['tones'][tone]} {DELIVERY['reference']}"
         torch.manual_seed(306)
         audio, _, _ = model.generate_with_prompt_cache(
             target_text=f"({instruction}){' '.join(text.split())}",
-            prompt_cache=reference,
+            prompt_cache=get_reference(reference_path),
             cfg_value=2.0,
             inference_timesteps=10,
             max_len=256,
@@ -73,7 +81,7 @@ def main():
         for line in sys.stdin:
             try:
                 job = json.loads(line)
-                synthesize(job["tone"], job["text"], job["output"], job.get("control"))
+                synthesize(job["tone"], job["text"], job["output"], job.get("control"), job.get("reference"))
             except Exception as error:
                 print(type(error).__name__, file=sys.stderr, flush=True)
                 print("VRM_ERROR", flush=True)
