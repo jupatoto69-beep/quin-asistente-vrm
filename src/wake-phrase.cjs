@@ -1,5 +1,5 @@
 function wakeCommand(transcript) {
-  const prefix = /^[\s¿¡"«“]*(?:h?ey|ay|o(?:y|ll)e)[\s,.!:;…–—-]+(?:qu[ií]nn?|queen|k[ií]n)(?=$|[\s,.!?¡¿:;…–—-])/iu.exec(transcript);
+  const prefix = /^[\s¿¡"«“]*(?:h?ey|ay|o(?:y|ll)e)[\s,.!:;…–—-]+(?:qu[ií]nn?|queen|k[ií]n|keane)(?=$|[\s,.!?¡¿:;…–—-])/iu.exec(transcript);
   if (!prefix) {
     // Alternate spellings observed for short, standalone calls.
     return /^[\s¿¡"«“]*(?:h?ey[\s,.!:;…–—-]+quina|ol[eé][\s,.!:;…–—-]+quin)[\s,.!?¡¿:;…–—-]*$/iu.test(transcript) ? '' : null;

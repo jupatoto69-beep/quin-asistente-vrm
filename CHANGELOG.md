@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.12.0 · Mira esto
+
+- Añadí un selector de pantalla o ventana para que Quin pueda comentar un recorte que le muestro.
+- El recorte se confirma antes de enviarlo al modelo visual local. Quin puede dibujar una marca aproximada en la vista previa.
+
 ## v0.11.0 · Juegos de sobremesa
 
 - Añadí Dos verdades y una mentira, dilemas absurdos, historias improvisadas por turnos y misterios cortos.

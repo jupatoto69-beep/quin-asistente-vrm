@@ -12,6 +12,7 @@
     <strong>Quin</strong>
     <button id="memory-open" type="button" disabled>Memoria</button>
     <button id="profile-open" type="button" disabled>Perfil</button>
+    <button id="vision-open" type="button" aria-haspopup="dialog" disabled>Mira esto</button>
     <button id="reset-avatar" type="button" title="Restaurar el avatar de muestra" hidden>Usar muestra</button>
     <button id="minimize" class="icon" aria-label="Minimizar" title="Minimizar">−</button>
     <button id="close" class="icon" aria-label="Cerrar" title="Cerrar">×</button>
@@ -55,6 +56,32 @@
       <div id="voice-samples" class="voice-samples" aria-label="Muestras de voz"></div>
     </details>
   </section>
+  <dialog id="vision-dialog" aria-labelledby="vision-title">
+    <header class="memory-header">
+      <h2 id="vision-title">Quin, mira esto</h2>
+      <form method="dialog"><button class="icon" aria-label="Cerrar vista">×</button></form>
+    </header>
+    <p class="hint">Elige una fuente y captura un instante. Solo se analiza el recorte que confirmes.</p>
+    <div class="vision-row">
+      <select id="vision-source" aria-label="Pantalla o ventana"></select>
+      <button id="vision-refresh" type="button">Actualizar lista</button>
+      <button id="vision-capture" type="button">Capturar vista</button>
+    </div>
+    <div class="vision-preview" hidden>
+      <canvas id="vision-canvas" aria-label="Vista previa del recorte"></canvas>
+    </div>
+    <div id="vision-select-controls" class="vision-row" hidden>
+      <button id="vision-crop" type="button" disabled>Confirmar recorte</button>
+      <button id="vision-full" type="button">Usar vista completa</button>
+    </div>
+    <form id="vision-ask" class="vision-row" hidden>
+      <input id="vision-question" aria-label="Pregunta sobre el recorte" maxlength="500" placeholder="¿Qué ves? · ¿Puedes señalar…?">
+      <button id="vision-analyze" class="primary" type="submit">Analizar recorte</button>
+      <button id="vision-stop" type="button" hidden>Parar voz</button>
+    </form>
+    <p id="vision-status" class="hint" role="status"></p>
+    <output id="vision-result" aria-live="polite"></output>
+  </dialog>
   <dialog id="games-dialog" aria-labelledby="games-title">
     <header class="memory-header">
       <h2 id="games-title">Juegos con Quin</h2>

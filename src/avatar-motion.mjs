@@ -7,7 +7,7 @@ const idleStyles = {
   chatty: { gestures: [...idleGestures, 'ponder', 'wave'], wait: 2.4, variation: 2, strength: 1 },
 };
 const tapGestures = ['wave', 'hair', 'curiosity', 'oops'];
-const thinkingStates = new Set(['transcribing', 'thinking', 'responding', 'preparing']);
+const thinkingStates = new Set(['transcribing', 'thinking', 'responding', 'preparing', 'looking']);
 const reachingGestures = new Set(['point', 'thumb', 'raise', 'hair', 'stretch', 'leg', 'arm', 'dance']);
 
 const stances = [

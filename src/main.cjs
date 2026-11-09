@@ -8,6 +8,8 @@ const { createProfile } = require('./profile.cjs');
 const { createAppearanceCatalog } = require('./appearance.cjs');
 const { tones, liveSamples, wakePhrases } = require('./voice.cjs');
 const { wakeCommand } = require('./wake-phrase.cjs');
+const { createScreenCapture } = require('./screen-capture.cjs');
+const { validImage } = require('./vision.cjs');
 
 const root = join(__dirname, '..');
 const origin = 'app://asistente';
@@ -46,6 +48,8 @@ let busy = false;
 let micUntil = 0;
 let wakeJob;
 let voiceJob;
+let visionJob;
+const capture = createScreenCapture(() => window, origin);
 
 function togglePassThrough() {
   passThrough = !passThrough;
@@ -172,6 +176,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.whenReady().then(async () => {
     const profile = session.fromPartition('asistente-vrm');
+    capture.attach(profile);
     profile.protocol.handle('app', (request) => {
       const url = new URL(request.url);
       if (url.host === 'asistente' && url.pathname === '/avatar-personal.vrm' &&
@@ -181,17 +186,44 @@ if (!app.requestSingleInstanceLock()) {
       const path = url.host === 'asistente' && resources.get(url.pathname);
       return path ? net.fetch(pathToFileURL(join(root, path)).href) : new Response(null, { status: 404 });
     });
-    profile.setPermissionCheckHandler((contents, permission, url, details) =>
-      audioPermission(contents, permission, url, details.mediaType === 'audio'));
+    profile.setPermissionCheckHandler((contents, permission, url, details) => permission === 'display-capture'
+      ? capture.permitted(contents, url)
+      : audioPermission(contents, permission, url, details.mediaType === 'audio'));
     profile.setPermissionRequestHandler((contents, permission, callback, details) => {
-      callback(audioPermission(contents, permission, details.requestingUrl,
-        details.mediaTypes?.length === 1 && details.mediaTypes[0] === 'audio'));
+      callback(permission === 'display-capture' ? capture.permitted(contents, details.requestingUrl)
+        : audioPermission(contents, permission, details.requestingUrl,
+          details.mediaTypes?.length === 1 && details.mediaTypes[0] === 'audio'));
     });
     addHandler('assistant:ready', () => services.ready);
     addHandler('assistant:chat', (input, sender) => onlyOne(() => services.chat(validText(input?.text, 1200), (chunk) => {
       if (!sender.isDestroyed()) sender.send('assistant:reply-chunk', chunk);
     }, Array.isArray(input?.body) ? input.body : [], appearanceCatalog.current(input?.avatarId), input?.view, input?.starter)));
     addHandler('assistant:gesture-result', (input) => onlyOne(() => services.confirmGesture(input?.id, input?.performed)));
+    addHandler('vision:panel', (enabled) => {
+      if (enabled === true) {
+        if (busy) throw new Error('Espera a que Quin termine su respuesta.');
+        if (passThrough) togglePassThrough();
+      } else {
+        visionJob?.abort();
+      }
+      capture.setOpen(enabled === true);
+    });
+    addHandler('vision:sources', capture.sources);
+    addHandler('vision:authorize', capture.authorize);
+    addHandler('vision:look', (input) => onlyOne(async () => {
+      if (!capture.isOpen()) throw new Error('Abre «Mira esto» antes de analizar un recorte.');
+      const question = validText(input?.question, 500);
+      const image = validImage(input?.image);
+      const job = visionJob = new AbortController();
+      try {
+        return await services.look(question, image, job.signal);
+      } catch (error) {
+        if (!job.signal.aborted) throw error;
+        return null;
+      } finally {
+        visionJob = undefined;
+      }
+    }));
     addHandler('assistant:speak', (input) => withSpeech((signal) => services.speak(validText(input?.text, 2500), input?.tone, signal)));
     addHandler('assistant:speak-stream', (input, sender) => withSpeech(async (signal) => {
       const result = await services.speakStream(validText(input?.text, 2500), input?.tone, (chunk) => {

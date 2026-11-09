@@ -94,6 +94,23 @@ input[type="checkbox"] { accent-color: var(--accent); }
 }
 #games-open { min-height: 25px; }
 .games-choices { display: grid; gap: 6px; }
+#vision-dialog { width: min(840px, calc(100vw - 24px)); max-height: calc(100vh - 28px); overflow: auto; gap: 7px; }
+#vision-dialog p { margin: 0; }
+.vision-row { display: flex; flex-wrap: wrap; gap: 6px; }
+#vision-source, #vision-question {
+  min-width: min(200px, 100%);
+  flex: 1;
+  font: inherit;
+  color: inherit;
+  background: #161024;
+  border: 1px solid #624e84;
+  border-radius: 7px;
+  padding: 5px 7px;
+}
+.vision-preview { display: flex; justify-content: center; min-height: 0; flex: 0 1 auto; }
+#vision-canvas { display: block; max-width: 100%; max-height: 48vh; object-fit: contain; border-radius: 5px; touch-action: none; }
+#vision-canvas.selecting { cursor: crosshair; }
+#vision-result { white-space: pre-wrap; overflow-wrap: anywhere; }
 #voice-preview { margin-top: 8px; color: var(--muted); }
 #voice-preview summary { cursor: pointer; }
 .voice-samples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }

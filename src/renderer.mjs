@@ -6,6 +6,7 @@ import { initializeProfilePanel } from './profile-panel.mjs';
 import { handCue } from './hand-cues.cjs';
 import { containsInterruption, watchWake } from './wake-listener.mjs';
 import { createCompanion } from './companion.cjs';
+import { createVisionPanel, visionCommand } from './vision-panel.mjs';
 
 const api = window.assistant;
 initializeProfilePanel(api);
@@ -20,6 +21,9 @@ const wake = byId('wake');
 const companionMode = byId('companion');
 const gamesOpen = byId('games-open');
 const gamesDialog = byId('games-dialog');
+const visionOpen = byId('vision-open');
+const visionDialog = byId('vision-dialog');
+const visionStop = byId('vision-stop');
 const messages = byId('messages');
 const file = byId('file');
 const pick = byId('pick');
@@ -42,6 +46,7 @@ const labels = {
   thinking: 'Pensando con Qwen3…',
   responding: 'Escribiendo respuesta…',
   gesturing: 'Moviéndose…',
+  looking: 'Mirando el recorte…',
   preparing: 'Preparando la voz…',
   speaking: 'Hablando',
   interrupted: 'Respuesta pausada…',
@@ -70,9 +75,34 @@ let companionInterval;
 let companionPrompt;
 let companionVisible = true;
 let gameActive = false;
+let visualSpeaking = false;
+
+const vision = createVisionPanel(api, {
+  available: () => ready.vision,
+  onOpen: endVoiceConversation,
+  onClose() {
+    if (visualSpeaking) interruptReply();
+    update(state);
+  },
+  async analyze(question, image, show) {
+    update('looking');
+    try {
+      const reply = await api.look(question, image);
+      if (!reply || !show(reply)) return;
+      const row = addMessage('Quin', reply.text).parentElement;
+      visualSpeaking = true;
+      await deliverReply(reply, row);
+    } finally {
+      visualSpeaking = false;
+      update('idle');
+    }
+  },
+});
+visionOpen.addEventListener('click', () => { if (state === 'idle') void vision.open(); });
+visionStop.addEventListener('click', () => interruptReply());
 
 function canSend() {
-  return ready.chat && (state === 'idle' || (state === 'listening' && pendingCorrection));
+  return ready.chat && !visionDialog.open && (state === 'idle' || (state === 'listening' && pendingCorrection));
 }
 
 function update(next) {
@@ -88,11 +118,14 @@ function update(next) {
   byId('status').textContent = label;
   send.disabled = !canSend();
   gamesOpen.disabled = !canSend();
-  mic.disabled = !canInterrupt && (!ready.chat || !ready.transcribe || !(wakeArmed || ['idle', 'listening'].includes(state)));
+  visionOpen.disabled = state !== 'idle' || visionDialog.open;
+  visionStop.hidden = !visualSpeaking || !canInterrupt;
+  mic.disabled = visionDialog.open || (!canInterrupt && (!ready.chat || !ready.transcribe || !(wakeArmed || ['idle', 'listening'].includes(state))));
   mic.textContent = canInterrupt ? 'Interrumpir' : wakeArmed ? 'Terminar charla' : state === 'listening' ? 'Terminar' : 'Hablar';
   mic.setAttribute('aria-pressed', String(wakeArmed || state === 'listening'));
-  wake.disabled = !ready.chat || !ready.transcribe || (state !== 'idle' && (!wake.checked || !wakeListener));
-  if (canInterrupt && !containsInterruption(activeSpeech.text)) wakeListener?.listenForInterruption();
+  wake.disabled = visionDialog.open || !ready.chat || !ready.transcribe || (state !== 'idle' && (!wake.checked || !wakeListener));
+  if (visionDialog.open) wakeListener?.setEnabled(false);
+  else if (canInterrupt && !containsInterruption(activeSpeech.text)) wakeListener?.listenForInterruption();
   else wakeListener?.setEnabled(wakeArmed || (wake.checked && state === 'idle'));
   for (const button of toneButtons) button.disabled = state !== 'idle' || !ready.expressiveVoice;
 }
@@ -421,6 +454,11 @@ voice.addEventListener('change', async () => {
 
 async function answerInput(text, listener) {
   const addition = text.slice(0, 1200);
+  const visualQuestion = visionCommand(addition);
+  if (visualQuestion !== undefined) {
+    await vision.open(visualQuestion);
+    return;
+  }
   const prefix = 'Mi mensaje anterior fue: ';
   const connector = '\nAñado o corrijo: ';
   const room = 1200 - prefix.length - connector.length - addition.length;
