@@ -4,7 +4,7 @@ import { tones, liveSamples, softVoiceTones, wakePhrases, validTone, speechText,
 import { initializeMemoryPanel } from './memory-panel.mjs';
 import { initializeProfilePanel } from './profile-panel.mjs';
 import { handCue } from './hand-cues.cjs';
-import { watchWake } from './wake-listener.mjs';
+import { containsInterruption, watchWake } from './wake-listener.mjs';
 
 const api = window.assistant;
 initializeProfilePanel(api);
@@ -40,6 +40,7 @@ const labels = {
   gesturing: 'Moviéndose…',
   preparing: 'Preparando la voz…',
   speaking: 'Hablando',
+  interrupted: 'Respuesta pausada…',
 };
 let ready = {};
 let state = 'idle';
@@ -58,6 +59,12 @@ let replyText;
 let speakingTone;
 let speakingReaction;
 let voicePacket;
+let activeSpeech;
+let pendingCorrection;
+
+function canSend() {
+  return ready.chat && (state === 'idle' || (state === 'listening' && pendingCorrection));
+}
 
 function update(next) {
   state = next;
@@ -67,13 +74,15 @@ function update(next) {
   if (state === 'listening' && wakeArmed) label = 'Te escucho…';
   if (state === 'speaking' && wakeArmed) label = 'Quin te oyó…';
   if (state === 'speaking' && speakingTone) label += ' · ' + tones[speakingTone].label;
+  const canInterrupt = state === 'speaking' && activeSpeech && !activeSpeech.controller.signal.aborted;
   byId('status').textContent = label;
-  send.disabled = state !== 'idle' || !ready.chat;
-  mic.disabled = !ready.chat || !ready.transcribe || !(wakeArmed || ['idle', 'listening'].includes(state));
-  mic.textContent = wakeArmed ? 'Terminar charla' : state === 'listening' ? 'Terminar' : 'Hablar';
+  send.disabled = !canSend();
+  mic.disabled = !canInterrupt && (!ready.chat || !ready.transcribe || !(wakeArmed || ['idle', 'listening'].includes(state)));
+  mic.textContent = canInterrupt ? 'Interrumpir' : wakeArmed ? 'Terminar charla' : state === 'listening' ? 'Terminar' : 'Hablar';
   mic.setAttribute('aria-pressed', String(wakeArmed || state === 'listening'));
   wake.disabled = !ready.chat || !ready.transcribe || (state !== 'idle' && (!wake.checked || !wakeListener));
-  wakeListener?.setEnabled(wakeArmed || (wake.checked && state === 'idle'));
+  if (canInterrupt && !containsInterruption(activeSpeech.text)) wakeListener?.listenForInterruption();
+  else wakeListener?.setEnabled(wakeArmed || (wake.checked && state === 'idle'));
   for (const button of toneButtons) button.disabled = state !== 'idle' || !ready.expressiveVoice;
 }
 
@@ -135,10 +144,17 @@ function connectVoiceOutput(input, tone) {
   return shelf;
 }
 
-async function play(wav, tone, referenceSample = false) {
+async function play(wav, tone, referenceSample = false, signal) {
   const audio = await context.decodeAudioData(wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength));
+  if (signal?.aborted) return;
   update('speaking');
-  await startBufferedAudio(audio, tone, referenceSample).ended;
+  const playback = startBufferedAudio(audio, tone, referenceSample);
+  signal?.addEventListener('abort', playback.stop, { once: true });
+  try {
+    await playback.ended;
+  } finally {
+    signal?.removeEventListener('abort', playback.stop);
+  }
 }
 
 function startBufferedAudio(audio, tone, referenceSample = false) {
@@ -170,13 +186,20 @@ function startBufferedAudio(audio, tone, referenceSample = false) {
 
 api.onVoiceChunk((chunk) => voicePacket?.(chunk));
 
-async function playStream(text, tone) {
+async function playStream(text, tone, signal) {
   analyser = context.createAnalyser();
   analyser.fftSize = 512;
   samples = new Float32Array(analyser.fftSize);
   const output = connectVoiceOutput(analyser, tone);
   const player = createStreamPlayer(context, analyser, () => update('speaking'));
+  let stop;
   const playback = new Promise((resolve) => {
+    stop = () => {
+      voicePacket = undefined;
+      player.dispose();
+      resolve();
+    };
+    signal?.addEventListener('abort', stop, { once: true });
     voicePacket = (chunk) => {
       if (chunk === null) resolve(player.finish());
       else player.push(chunk);
@@ -184,9 +207,10 @@ async function playStream(text, tone) {
   });
   try {
     const fallback = await api.speakStream(text, tone);
-    if (fallback === null) await playback;
+    if (fallback === null && !signal?.aborted) await playback;
     return fallback;
   } finally {
+    signal?.removeEventListener('abort', stop);
     voicePacket = undefined;
     player.dispose();
     analyser.disconnect();
@@ -195,22 +219,23 @@ async function playStream(text, tone) {
   }
 }
 
-async function speak(text, tone, preview = false) {
+async function speak(text, tone, preview = false, signal) {
   speakingTone = validTone(tone);
   speakingReaction = speechReaction(speechText(text));
   update('preparing');
   try {
     await unlockAudio();
+    if (signal?.aborted) return;
     if (preview && (tone === 'picara' ? ready.picaraSample : !liveSamples.has(tone) && ready.voiceSamples)) {
       const response = await fetch(`/muestra-${tone}.wav`);
       if (!response.ok) throw new Error('No se pudo abrir la muestra de voz.');
       await play(new Uint8Array(await response.arrayBuffer()), speakingTone, true);
     } else if (ready.voiceStream) {
-      const fallback = await playStream(text, tone);
-      if (fallback) await play(fallback, speakingTone);
+      const fallback = await playStream(text, tone, signal);
+      if (fallback && !signal?.aborted) await play(fallback, speakingTone, false, signal);
     } else {
       const wav = await api.speak(text, tone);
-      if (wav) await play(wav, speakingTone);
+      if (wav && !signal?.aborted) await play(wav, speakingTone, false, signal);
     }
   } finally {
     speakingTone = undefined;
@@ -218,13 +243,15 @@ async function speak(text, tone, preview = false) {
   }
 }
 
-async function answer(text) {
+async function answer(text, request) {
+  const view = avatar?.observeBody();
   update('thinking');
   const userText = addMessage('Tú', text);
   let reply;
+  let replyRow;
   let acted = false;
   try {
-    reply = await api.chat(text, avatar?.capabilities(), avatarId);
+    reply = await api.chat(request, avatar?.capabilities(), avatarId, view);
     if (reply.action) {
       update('gesturing');
       const performed = await avatar?.gesture(reply.action) ?? false;
@@ -233,6 +260,7 @@ async function answer(text) {
     }
     if (replyText) replyText.data = reply.text;
     else replyText = addMessage('Quin', reply.text);
+    replyRow = replyText.parentElement;
     if (reply.memoryId && userText.parentElement && replyText.parentElement) {
       userText.parentElement.dataset.memoryId = reply.memoryId;
       replyText.parentElement.dataset.memoryId = reply.memoryId;
@@ -244,10 +272,33 @@ async function answer(text) {
   const cue = acted ? null : handCue(text, reply.text);
   if (cue) avatar?.gesture(cue);
   if (voice.checked && ready.speak) {
-    await speak(reply.text, reply.tone);
+    const speech = activeSpeech = { controller: new AbortController(), text: reply.text, id: reply.memoryId, row: replyRow };
+    try {
+      await speak(reply.text, reply.tone, false, speech.controller.signal);
+    } catch (error) {
+      if (!speech.controller.signal.aborted) throw error;
+    } finally {
+      activeSpeech = undefined;
+      wakeListener?.setEnabled(false);
+    }
+    if (speech.controller.signal.aborted) {
+      await speech.cancellation;
+      return speech;
+    }
   } else {
     avatar?.reply(reply.tone, speechReaction(speechText(reply.text)));
   }
+}
+
+function interruptReply(addition = '') {
+  const speech = activeSpeech;
+  if (!speech || speech.controller.signal.aborted) return;
+  speech.addition = addition;
+  speech.controller.abort();
+  speech.cancellation = api.interrupt(speech.id).catch(report);
+  const author = speech.row?.querySelector('strong');
+  if (author) author.textContent = 'Quin (interrumpida) · ';
+  update('interrupted');
 }
 
 for (const button of toneButtons) {
@@ -289,8 +340,29 @@ voice.addEventListener('change', async () => {
 });
 
 async function answerInput(text, listener) {
+  const addition = text.slice(0, 1200);
+  const prefix = 'Mi mensaje anterior fue: ';
+  const connector = '\nAñado o corrijo: ';
+  const room = 1200 - prefix.length - connector.length - addition.length;
+  const request = pendingCorrection && room > 0 ? prefix + pendingCorrection.slice(0, room) + connector + addition : addition;
+  pendingCorrection = undefined;
   try {
-    await answer(text.slice(0, 1200));
+    const interrupted = await answer(addition, request);
+    if (interrupted) {
+      pendingCorrection = request;
+      if (interrupted.addition) return answerInput(interrupted.addition, wakeListener);
+      if (!wakeListener && ready.transcribe) {
+        update('opening');
+        const stream = await openMicrophone();
+        try {
+          wakeListener = await createVoiceListener(stream);
+        } catch (error) {
+          stream.getTracks().forEach((track) => track.stop());
+          throw error;
+        }
+      }
+      listener = wakeListener;
+    }
     if (listener && listener === wakeListener) {
       wakeArmed = true;
       listener.waitForCommand();
@@ -307,9 +379,14 @@ async function answerInput(text, listener) {
 byId('chat').addEventListener('submit', (event) => {
   event.preventDefault();
   const text = prompt.value.trim();
-  if (!text || state !== 'idle' || !ready.chat) return;
+  if (!text || !canSend()) return;
   prompt.value = '';
-  void answerInput(text);
+  const listener = state === 'listening' ? wakeListener : undefined;
+  if (listener) {
+    listener.setEnabled(false);
+    finishWakeWait();
+  }
+  void answerInput(text, listener);
 });
 
 async function preloadWakeReplies() {
@@ -347,6 +424,7 @@ function finishWakeWait() {
 }
 
 function endVoiceConversation() {
+  pendingCorrection = undefined;
   finishWakeWait();
   if (!wake.checked) {
     wakeListener?.close();
@@ -359,6 +437,7 @@ function disableWake() {
   wakeListener?.close();
   wakeListener = undefined;
   wake.checked = false;
+  pendingCorrection = undefined;
   const next = wakeArmed ? 'idle' : state;
   finishWakeWait();
   update(next);
@@ -373,6 +452,7 @@ function createVoiceListener(stream) {
     },
     idle: endVoiceConversation,
     stop: disableWake,
+    interrupt: interruptReply,
     error(error) {
       disableWake();
       report(error);
@@ -400,6 +480,7 @@ wake.addEventListener('change', async () => {
 });
 
 mic.addEventListener('click', async () => {
+  if (state === 'speaking' && activeSpeech) { interruptReply(); return; }
   if (capture) { capture.stop(); return; }
   if (wakeArmed) { wakeListener?.cancel(); return; }
   if (state !== 'idle') return;

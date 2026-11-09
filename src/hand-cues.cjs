@@ -90,5 +90,5 @@ function handCue(request, reply) {
   return null;
 }
 
-module.exports = { requestedHandCue, handCue, decodeGesture, mightRequestGesture, asksAboutBody,
+module.exports = { requestedHandCue, handCue, decodeGesture, mightRequestGesture, asksAboutBody, bodyRequest,
   gestureKinds, gestureTargets: [...targets, 'izquierdo', 'derecho'] };

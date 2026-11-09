@@ -8,9 +8,10 @@ function createVoiceWorker(python, script, args) {
 
   function finish(error) {
     if (!pending) return;
-    const { timer, resolve, reject } = pending;
+    const { timer, resolve, reject, signal } = pending;
     pending = undefined;
     clearTimeout(timer);
+    signal?.removeEventListener('abort', stop);
     if (error) reject(error);
     else resolve();
   }
@@ -44,12 +45,14 @@ function createVoiceWorker(python, script, args) {
     return process;
   }
 
-  function speak(text, tone, output, control, reference) {
+  function speak(text, tone, output, control, reference, signal) {
+    signal?.throwIfAborted();
     if (pending) throw new Error('Ya hay una solicitud de voz en curso.');
     clearTimeout(idle);
     child ??= start();
     return new Promise((resolve, reject) => {
-      pending = { resolve, reject, timer: setTimeout(stop, 100_000) };
+      pending = { resolve, reject, signal, timer: setTimeout(stop, 100_000) };
+      signal?.addEventListener('abort', stop, { once: true });
       child.stdin.write(JSON.stringify({ text, tone, output, control, reference }) + '\n');
     });
   }

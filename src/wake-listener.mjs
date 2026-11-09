@@ -3,6 +3,19 @@ import { wakeWav } from './audio.mjs';
 const silenceMs = 9000;
 const speechGraceMs = 27_000; // One 12 s clip plus the local decoder's timeout.
 const endConversation = /^\s*[¿¡]?(?:quin[\s,]+)?(?:(deja de escuchar(?:me)?)|termina la charla)(?:[,\s]+quin)?(?:[,\s]+por favor)?[.?!…\s]*$/iu;
+const interruptCue = /\b(?:esper[aá]|d[eé]jame terminar|me falt[oó] algo)\b/iu;
+const interruptStart = /^[¿¡\s]*(?:(?:oye|hey)[,\s]+)?(?:(?:quinn?|queen|kin|kim|keane)[,\s]+)?(?:esper[aá](?: un (?:segundo|momento))?|d[eé]jame terminar|me falt[oó] algo)(?=$|[\s,.!?;:…])/iu;
+
+export function containsInterruption(text) {
+  return interruptCue.test(text);
+}
+
+export function readInterruption(text) {
+  const match = interruptStart.exec(text);
+  if (!match) return null;
+  const extra = text.slice(match[0].length).replace(/^[\s,.!?;:…]+/u, '').trim();
+  return /^(?:quin|por favor|d[eé]jame terminar|me falt[oó] algo)[.!?…]*$/iu.test(extra) ? '' : extra;
+}
 
 export async function watchWake(context, stream, api, callbacks) {
   await context.audioWorklet.addModule('/wake-meter.js');
@@ -11,6 +24,7 @@ export async function watchWake(context, stream, api, callbacks) {
   const tracks = stream.getAudioTracks();
   let enabled = false;
   let waiting = false;
+  let interrupting = false;
   let epoch = 0;
   let checking = false;
   let queued;
@@ -21,10 +35,11 @@ export async function watchWake(context, stream, api, callbacks) {
     if (enabled === value) return;
     enabled = value;
     for (const track of tracks) track.enabled = value;
-    meter.port.postMessage({ enabled, epoch: ++epoch, holdoff });
+    meter.port.postMessage({ enabled, epoch: ++epoch, holdoff, interrupting });
     if (!enabled) {
       queued = undefined;
       waiting = false;
+      interrupting = false;
       deadline = undefined;
       clearTimeout(timer);
       if (checking) api.cancelWake().catch(() => {});
@@ -47,9 +62,17 @@ export async function watchWake(context, stream, api, callbacks) {
   }
 
   function waitForCommand() {
+    if (interrupting) setEnabled(false);
     waiting = true;
     setEnabled(true, 3);
     openListeningWindow();
+  }
+
+  function listenForInterruption() {
+    if (interrupting) return;
+    setEnabled(false);
+    interrupting = true;
+    setEnabled(true, 3);
   }
 
   async function check(samples) {
@@ -58,13 +81,21 @@ export async function watchWake(context, stream, api, callbacks) {
     try {
       const wav = await wakeWav(context, samples);
       if (!enabled || attempt !== epoch) return;
-      const text = await api.checkWake(wav, waiting);
+      const text = await api.checkWake(wav, waiting || interrupting, interrupting);
       if (!enabled || attempt !== epoch) return;
       if (text == null) {
         if (waiting && !queued && deadline !== undefined) expireAt(deadline);
         return;
       }
       if (text) {
+        if (interrupting) {
+          const addition = readInterruption(text);
+          if (addition !== null) {
+            setEnabled(false);
+            callbacks.interrupt(addition);
+          }
+          return;
+        }
         const ending = endConversation.exec(text);
         if (ending) {
           if (ending[1]) callbacks.stop();
@@ -111,7 +142,7 @@ export async function watchWake(context, stream, api, callbacks) {
   // The worklet leaves its output silent.
   source.connect(meter).connect(context.destination);
   return {
-    setEnabled, waitForCommand, cancel,
+    setEnabled, waitForCommand, listenForInterruption, cancel,
     close() {
       setEnabled(false);
       meter.port.close();

@@ -45,6 +45,7 @@ let passThrough = false;
 let busy = false;
 let micUntil = 0;
 let wakeJob;
+let voiceJob;
 
 function togglePassThrough() {
   passThrough = !passThrough;
@@ -77,6 +78,20 @@ async function onlyOne(operation) {
   } finally {
     busy = false;
   }
+}
+
+function withSpeech(operation) {
+  return onlyOne(async () => {
+    const job = voiceJob = new AbortController();
+    try {
+      return await operation(job.signal);
+    } catch (error) {
+      if (!job.signal.aborted) throw error;
+      return null;
+    } finally {
+      voiceJob = undefined;
+    }
+  });
 }
 
 function validText(value, maxLength) {
@@ -169,19 +184,23 @@ if (!app.requestSingleInstanceLock()) {
     addHandler('assistant:ready', () => services.ready);
     addHandler('assistant:chat', (input, sender) => onlyOne(() => services.chat(validText(input?.text, 1200), (chunk) => {
       if (!sender.isDestroyed()) sender.send('assistant:reply-chunk', chunk);
-    }, Array.isArray(input?.body) ? input.body : [], appearanceCatalog.current(input?.avatarId))));
+    }, Array.isArray(input?.body) ? input.body : [], appearanceCatalog.current(input?.avatarId), input?.view)));
     addHandler('assistant:gesture-result', (input) => onlyOne(() => services.confirmGesture(input?.id, input?.performed)));
-    addHandler('assistant:speak', (input) => onlyOne(() => services.speak(validText(input?.text, 2500), input?.tone)));
-    addHandler('assistant:speak-stream', (input, sender) => onlyOne(async () => {
+    addHandler('assistant:speak', (input) => withSpeech((signal) => services.speak(validText(input?.text, 2500), input?.tone, signal)));
+    addHandler('assistant:speak-stream', (input, sender) => withSpeech(async (signal) => {
       const result = await services.speakStream(validText(input?.text, 2500), input?.tone, (chunk) => {
-        if (!sender.isDestroyed()) sender.send('assistant:voice-chunk', chunk);
-      });
-      if (result === null && !sender.isDestroyed()) sender.send('assistant:voice-chunk', null);
+        if (!signal.aborted && !sender.isDestroyed()) sender.send('assistant:voice-chunk', chunk);
+      }, signal);
+      if (result === null && !signal.aborted && !sender.isDestroyed()) sender.send('assistant:voice-chunk', null);
       return result;
     }));
+    addHandler('assistant:interrupt', (id) => {
+      voiceJob?.abort();
+      services.markInterrupted(id == null ? undefined : validMemoryId(id));
+    });
     addHandler('assistant:transcribe', (input) => onlyOne(() => services.transcribe(validWav(input))));
     addHandler('assistant:wake-check', async (input) => {
-      if (busy || wakeJob) return null;
+      if ((busy && !(input?.interrupting === true && voiceJob)) || wakeJob) return null;
       const wav = validWav(input?.wav);
       if (wav.length > 385_000) throw new Error('El fragmento de activación es demasiado largo.');
       const job = wakeJob = new AbortController();

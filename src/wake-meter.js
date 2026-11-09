@@ -12,6 +12,7 @@ class QuinWakeMeter extends AudioWorkletProcessor {
       this.epoch = data.epoch;
       this.offset = 0;
       this.holdoff = data.holdoff ?? 9;
+      this.quietLimit = data.interrupting ? 20 : 32;
       this.reset();
     };
   }
@@ -48,7 +49,7 @@ class QuinWakeMeter extends AudioWorkletProcessor {
     this.length += frame.length;
     this.quiet = voiced ? 0 : this.quiet + 1;
     if (voiced && ++this.voiced === 7) this.port.postMessage({ epoch: this.epoch, started: true });
-    if (this.quiet < 32 && this.length < this.clip.length) return;
+    if (this.quiet < this.quietLimit && this.length < this.clip.length) return;
     if (this.voiced >= 7) {
       const samples = this.clip.slice(0, this.length);
       this.port.postMessage({ epoch: this.epoch, samples }, [samples.buffer]);

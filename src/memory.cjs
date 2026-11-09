@@ -41,6 +41,9 @@ function createConversationMemory(path) {
         tone TEXT NOT NULL,
         saved_at INTEGER NOT NULL
       ) STRICT;
+      CREATE TABLE IF NOT EXISTS interrupted_turns (
+        turn_id INTEGER PRIMARY KEY REFERENCES turns(id) ON DELETE CASCADE
+      ) STRICT;
       CREATE TABLE IF NOT EXISTS social_notes (
         turn_id INTEGER PRIMARY KEY REFERENCES turns(id) ON DELETE CASCADE,
         source_turn_id INTEGER REFERENCES turns(id) ON DELETE CASCADE,
@@ -69,21 +72,23 @@ function createConversationMemory(path) {
   }
 
   const insert = db.prepare('INSERT INTO turns(question, answer, tone, saved_at) VALUES(?, ?, ?, ?)');
-  const latest = db.prepare('SELECT * FROM turns ORDER BY id DESC LIMIT 5');
+  const latest = db.prepare('SELECT * FROM turns WHERE id NOT IN (SELECT turn_id FROM interrupted_turns) ORDER BY id DESC LIMIT 5');
   const olderMatches = db.prepare(`
     SELECT turns.* FROM turn_search JOIN turns ON turns.id = turn_search.rowid
-    WHERE turn_search MATCH ? AND turns.id < ?
+    WHERE turn_search MATCH ? AND turns.id < ? AND turns.id NOT IN (SELECT turn_id FROM interrupted_turns)
     ORDER BY bm25(turn_search, 4.0, 1.0), turns.id DESC LIMIT 3
   `);
   const page = db.prepare(`
-    SELECT turns.*, social_notes.kind, social_notes.text AS note_text FROM turns
+    SELECT turns.*, social_notes.kind, social_notes.text AS note_text,
+      turns.id IN (SELECT turn_id FROM interrupted_turns) AS interrupted FROM turns
     LEFT JOIN social_notes ON social_notes.turn_id = turns.id
     WHERE turns.id < ? AND (? IS NULL OR social_notes.kind = ?)
     ORDER BY turns.id DESC LIMIT ?
   `);
   const searchPage = db.prepare(`
     WITH matches AS (SELECT rowid FROM turn_search WHERE turn_search MATCH ?)
-    SELECT turns.*, social_notes.kind, social_notes.text AS note_text
+    SELECT turns.*, social_notes.kind, social_notes.text AS note_text,
+      turns.id IN (SELECT turn_id FROM interrupted_turns) AS interrupted
     FROM turns
     LEFT JOIN social_notes ON social_notes.turn_id = turns.id
     WHERE (turns.id IN matches OR social_notes.source_turn_id IN matches)
@@ -92,7 +97,8 @@ function createConversationMemory(path) {
   `);
   const remove = db.prepare('DELETE FROM turns WHERE id = ?');
   const clear = db.prepare('DELETE FROM turns');
-  const last = db.prepare('SELECT id, question, answer FROM turns ORDER BY id DESC LIMIT 1');
+  const last = db.prepare('SELECT id, question, answer FROM turns WHERE id NOT IN (SELECT turn_id FROM interrupted_turns) ORDER BY id DESC LIMIT 1');
+  const interrupt = db.prepare('INSERT OR IGNORE INTO interrupted_turns SELECT id FROM turns WHERE id = ? AND id = (SELECT MAX(id) FROM turns)');
   const addNote = db.prepare(`
     INSERT INTO social_notes(turn_id, source_turn_id, kind, text) VALUES(?, ?, ?, ?)
     ON CONFLICT(kind, text) DO NOTHING
@@ -177,6 +183,7 @@ function createConversationMemory(path) {
     removeNote: (id) => removeNote.run(id),
     nextStory: (now = Date.now()) => due.get(now - 30 * day, now - day, now - day),
     remove: (id) => remove.run(id),
+    interrupt: (id) => interrupt.run(id),
     clear: () => clear.run(),
     close: () => db.close(),
   };

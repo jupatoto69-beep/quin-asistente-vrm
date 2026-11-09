@@ -93,6 +93,7 @@ const directions = {
   izquierda: { x: -0.65, y: 0.37 }, derecha: { x: 1.65, y: 0.37 },
   arriba: { x: 0.62, y: -0.62 }, abajo: { x: 0.63, y: 1.62 },
 };
+const closeups = { face: ['face'], hands: ['leftHand', 'rightHand'], feet: ['leftFoot', 'rightFoot'] };
 
 export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget) {
   const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
@@ -141,6 +142,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   let seconds = 0;
   let nextBlink = 2.5;
   const aimTarget = { position: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1) };
+  const bodyPoint = new THREE.Vector3();
 
   function stageTarget(name) {
     if (name === 'cursor') return { x: (pointer.x + 1) / 2, y: (pointer.y + 1) / 2 };
@@ -183,6 +185,65 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
     viewCenter.set(0, 0);
     orientCamera();
     updateProjection();
+  }
+
+  function placeBodyPoint(part) {
+    bones.landmarks[part].getWorldPosition(bodyPoint);
+    // The head and ankle joints sit below the face and above the sole, respectively.
+    if (part === 'face') bodyPoint.y += height * 0.045;
+    if (part.endsWith('Foot')) bodyPoint.y -= height * 0.025;
+    return bodyPoint;
+  }
+
+  function observeBody() {
+    if (!bones) return;
+    const front = aimTarget.normal.z;
+    const visible = Object.keys(bones.landmarks).filter((part) => {
+      const point = placeBodyPoint(part).project(camera);
+      return Math.abs(point.x) <= 1 && Math.abs(point.y) <= 1;
+    });
+    const raised = bones.legs.find((leg) =>
+      leg.foot.getWorldPosition(bodyPoint).y - leg.plant.y > leg.reach.length * 0.026);
+    return {
+      angle: front >= 0.71 ? 'front' : front <= -0.71 ? 'back' : 'side',
+      visible,
+      raisedFoot: raised?.side,
+      posture: bones.legs.length === 2 ? bones.hipDrop > 0.075 ? 'crouched' : 'standing' : undefined,
+    };
+  }
+
+  function showBody(view) {
+    if (!bones) return false;
+    if (view === 'full') {
+      resetView();
+      return true;
+    }
+    if (view === 'front' || view === 'back' || view === 'side') {
+      yaw = view === 'back' ? Math.PI : view === 'side' ? Math.PI / 2 : 0;
+      orientCamera();
+      return true;
+    }
+    const parts = closeups[view];
+    if (!parts?.every((part) => bones.landmarks[part])) return false;
+    if (view === 'face') {
+      yaw = 0;
+      orientCamera();
+    }
+    const bounds = new THREE.Box2();
+    const point = new THREE.Vector2();
+    for (const part of parts) {
+      const local = placeBodyPoint(part).applyMatrix4(camera.matrixWorldInverse);
+      bounds.expandByPoint(point.set(local.x, local.y));
+    }
+    const size = bounds.getSize(point);
+    const margin = height * (view === 'face' ? 0.12 : 0.095);
+    zoom = THREE.MathUtils.clamp(
+      Math.min(fittedHalfWidth / (size.x / 2 + margin), fittedHalfHeight / (size.y / 2 + margin)),
+      1, 3,
+    );
+    bounds.getCenter(viewCenter);
+    updateProjection();
+    return true;
   }
 
   function frameAvatar() {
@@ -238,6 +299,10 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
       leftArm: armRig(get, 'left', leftSide),
       rightArm: armRig(get, 'right', -leftSide),
       legs: ['left', 'right'].map((name) => legRig(get, name, leftSide)).filter(Boolean),
+      landmarks: Object.fromEntries(Object.entries({
+        face: head, torso: chest, leftHand: get('leftHand'), rightHand: get('rightHand'),
+        leftFoot: get('leftFoot'), rightFoot: get('rightFoot'),
+      }).filter(([, node]) => node)),
     };
     applyPose(joints, restPose(), 1);
     next.update(0);
@@ -419,8 +484,9 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   }
 
   return {
-    load, capabilities, reply: (tone, reaction) => motion.reply(tone, reaction),
+    load, capabilities, reply: (tone, reaction) => motion.reply(tone, reaction), observeBody,
     async gesture(cue) {
+      if (cue.kind === 'view') return showBody(cue.view);
       if (cue.kind !== 'sequence') return perform(cue, false);
       for (const step of cue.steps) {
         if (!await perform(step, true)) return false;

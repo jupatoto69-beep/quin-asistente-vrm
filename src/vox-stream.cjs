@@ -45,12 +45,12 @@ function createVoxStream(executable, base, acoustic, reference, shutdown, altern
     idle.unref();
   }
 
-  function request(url, path, body, timeout) {
+  function request(url, path, body, timeout, signal = shutdown) {
     const options = body ? {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     } : {};
     return fetch(url + path, {
-      ...options, redirect: 'error', signal: AbortSignal.any([shutdown, AbortSignal.timeout(timeout)]),
+      ...options, redirect: 'error', signal: AbortSignal.any([shutdown, signal, AbortSignal.timeout(timeout)]),
     });
   }
 
@@ -101,14 +101,15 @@ function createVoxStream(executable, base, acoustic, reference, shutdown, altern
     return starting;
   }
 
-  async function speak(text, control, onChunk, sample = reference) {
+  async function speak(text, control, onChunk, sample = reference, signal = shutdown) {
     const url = await warm();
+    signal.throwIfAborted();
     clearTimeout(idle);
     try {
       const response = await request(url, '/v1/audio/speech/stream', {
         input: text, control, reference_audio_path: sample,
         seed: 306, gain: 0.6, inference_timesteps: 6, max_steps: 200,
-      }, 75_000);
+      }, 75_000, signal);
       if (!response.ok || !response.body) throw new Error('VoxGen no pudo iniciar el audio.');
       let buffered = Buffer.alloc(0);
       let readingAudio = false;

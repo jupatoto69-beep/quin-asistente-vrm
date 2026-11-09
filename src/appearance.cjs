@@ -41,7 +41,7 @@ function createAppearanceCatalog(directory) {
 
   function current(id) {
     if (!validAvatarId(id)) return;
-    return { get: () => get(id), save: (description) => save(id, description) };
+    return { id, get: () => get(id), save: (description) => save(id, description) };
   }
 
   return { current };

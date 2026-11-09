@@ -39,7 +39,7 @@ export function initializeMemoryPanel(api, messages) {
       note.append(label, document.createTextNode(entry.note_text));
       article.append(note);
     }
-    for (const [label, text] of [['Tú', entry.question], ['Quin', entry.answer]]) {
+    for (const [label, text] of [['Tú', entry.question], [entry.interrupted ? 'Quin (interrumpida)' : 'Quin', entry.answer]]) {
       const paragraph = document.createElement('p');
       const author = document.createElement('strong');
       author.textContent = label + ' · ';

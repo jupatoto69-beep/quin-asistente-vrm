@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.9.0 · Interrupciones y conciencia corporal
+
+- Se puede cortar la voz y añadir una corrección conservando la pregunta anterior. El historial marca la respuesta interrumpida.
+- Quin puede describir su postura y encuadre, mostrar partes de su cuerpo y recordar qué lado acaba de mover.
+
 ## v0.8.0 · Giro, zoom y apariencia por avatar
 
 - Añadí el giro al arrastrar, el zoom con la rueda y el restablecimiento de la vista.

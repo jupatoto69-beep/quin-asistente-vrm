@@ -2,14 +2,15 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('assistant', {
   ready: () => ipcRenderer.invoke('assistant:ready'),
-  chat: (text, body, avatarId) => ipcRenderer.invoke('assistant:chat', { text, body, avatarId }),
+  chat: (text, body, avatarId, view) => ipcRenderer.invoke('assistant:chat', { text, body, avatarId, view }),
   gestureResult: (id, performed) => ipcRenderer.invoke('assistant:gesture-result', { id, performed }),
   onReplyChunk: (callback) => ipcRenderer.on('assistant:reply-chunk', (_event, chunk) => callback(chunk)),
   speak: (text, tone) => ipcRenderer.invoke('assistant:speak', { text, tone }),
   speakStream: (text, tone) => ipcRenderer.invoke('assistant:speak-stream', { text, tone }),
+  interrupt: (id) => ipcRenderer.invoke('assistant:interrupt', id),
   onVoiceChunk: (callback) => ipcRenderer.on('assistant:voice-chunk', (_event, chunk) => callback(chunk)),
   transcribe: (wav) => ipcRenderer.invoke('assistant:transcribe', wav),
-  checkWake: (wav, waiting) => ipcRenderer.invoke('assistant:wake-check', { wav, waiting }),
+  checkWake: (wav, waiting, interrupting) => ipcRenderer.invoke('assistant:wake-check', { wav, waiting, interrupting }),
   cancelWake: () => ipcRenderer.invoke('assistant:wake-cancel'),
   microphone: (requested) => ipcRenderer.invoke('assistant:microphone', requested),
   listMemory: (query, before, kind) => ipcRenderer.invoke('memory:list', { query, before, kind }),
