@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' blob: data:; img-src 'self' blob: data:; base-uri 'none'; form-action 'none'">
+  <title>Asistente VRM</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="titlebar">
+    <strong>Asistente VRM</strong>
+    <button id="reset-avatar" type="button" title="Restaurar el avatar de muestra" hidden>Usar muestra</button>
+    <button id="minimize" class="icon" aria-label="Minimizar" title="Minimizar">−</button>
+    <button id="close" class="icon" aria-label="Cerrar" title="Cerrar">×</button>
+  </header>
+  <main id="stage" aria-label="Avatar 3D">
+    <div id="avatar-note" class="badge" role="status">Cargando avatar…</div>
+    <div id="pass-note" class="badge" hidden>Clics transparentes · Ctrl+Alt+V para volver</div>
+  </main>
+  <section class="panel" aria-label="Conversación">
+    <div class="status-row">
+      <span class="indicator" aria-hidden="true"></span>
+      <span id="status" role="status">Iniciando…</span>
+      <label class="voice"><input id="voice" type="checkbox" checked disabled> Voz</label>
+    </div>
+    <div id="messages" role="log" aria-label="Mensajes">
+      <p class="hint">Escríbeme o pulsa «Hablar» para conversar en español.</p>
+    </div>
+    <form id="chat">
+      <input id="prompt" maxlength="1200" placeholder="Escribe un mensaje…" aria-label="Mensaje">
+      <button id="send" class="primary" type="submit" disabled>Enviar</button>
+    </form>
+    <div class="controls">
+      <button id="mic" class="mic" type="button" disabled>Hablar</button>
+      <button id="pick" type="button" disabled>Cambiar VRM</button>
+      <input id="file" type="file" accept=".vrm" hidden>
+      <button id="pass" type="button" title="Pulsa Ctrl+Alt+V para recuperar los clics">Dejar pasar clics</button>
+    </div>
+  </section>
+  <script type="module" src="/renderer.js"></script>
+</body>
+</html>

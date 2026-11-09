@@ -1,0 +1,22 @@
+{
+  "name": "asistente-vrm",
+  "productName": "Asistente VRM",
+  "version": "0.1.0",
+  "private": true,
+  "main": "src/main.cjs",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "esbuild src/renderer.mjs --bundle --format=esm --outfile=dist/renderer.js",
+    "start": "npm run build && electron ."
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "3.5.5",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "esbuild": "0.28.1"
+  }
+}
