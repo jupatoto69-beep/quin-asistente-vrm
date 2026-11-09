@@ -1,5 +1,7 @@
 import { createAvatar } from './avatar.mjs';
-import { record, toWhisperWav } from './audio.mjs';
+import { createStreamPlayer, record, toWhisperWav } from './audio.mjs';
+import { tones, validTone } from './voice.cjs';
+import { initializeMemoryPanel } from './memory-panel.mjs';
 
 const api = window.assistant;
 const byId = (id) => document.getElementById(id);
@@ -13,6 +15,16 @@ const messages = byId('messages');
 const file = byId('file');
 const pick = byId('pick');
 const resetAvatar = byId('reset-avatar');
+const voicePreview = byId('voice-preview');
+const toneButtons = [];
+for (const [tone, profile] of Object.entries(tones)) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.dataset.tone = tone;
+  button.textContent = profile.label;
+  toneButtons.push(button);
+  byId('voice-samples').append(button);
+}
 const labels = {
   idle: 'Lista',
   opening: 'Abriendo micrófono…',
@@ -31,15 +43,20 @@ let samples;
 let capture;
 let avatar;
 let replyText;
+let speakingTone;
+let voicePacket;
 
 function update(next) {
   state = next;
   document.body.dataset.state = state;
-  byId('status').textContent = state === 'idle' && !ready.chat ? 'Falta preparar Ollama y Qwen3' : labels[state];
+  let label = state === 'idle' && !ready.chat ? 'Falta preparar Ollama y Qwen3' : labels[state];
+  if (state === 'speaking' && speakingTone) label += ' · ' + tones[speakingTone].label;
+  byId('status').textContent = label;
   send.disabled = state !== 'idle' || !ready.chat;
   mic.disabled = !ready.chat || !ready.transcribe || !['idle', 'listening'].includes(state);
   mic.textContent = state === 'listening' ? 'Terminar' : 'Hablar';
   mic.setAttribute('aria-pressed', String(state === 'listening'));
+  for (const button of toneButtons) button.disabled = state !== 'idle' || !ready.expressiveVoice;
 }
 
 function addMessage(author, value, style = '') {
@@ -76,13 +93,20 @@ function mouthLevel() {
   return Math.min(0.95, Math.max(0, Math.sqrt(energy / samples.length) * 5 - 0.045));
 }
 
-async function play(wav) {
+async function play(wav, tone) {
   const audio = await context.decodeAudioData(wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength));
   const source = context.createBufferSource();
   analyser = context.createAnalyser();
   analyser.fftSize = 512;
   samples = new Float32Array(analyser.fftSize);
   source.buffer = audio;
+  if (ready.voiceEngine === 'kokoro') {
+    const { pitch, lift } = tones[tone];
+    const now = context.currentTime;
+    source.detune.setValueAtTime(pitch, now);
+    source.detune.linearRampToValueAtTime(pitch + lift, now + audio.duration * 0.35);
+    source.detune.linearRampToValueAtTime(pitch, now + audio.duration * 0.8);
+  }
   source.connect(analyser);
   analyser.connect(context.destination);
   update('speaking');
@@ -98,22 +122,85 @@ async function play(wav) {
   }
 }
 
+api.onVoiceChunk((chunk) => voicePacket?.(chunk));
+
+async function playStream(text, tone) {
+  analyser = context.createAnalyser();
+  analyser.fftSize = 512;
+  samples = new Float32Array(analyser.fftSize);
+  analyser.connect(context.destination);
+  const player = createStreamPlayer(context, analyser, () => update('speaking'));
+  const playback = new Promise((resolve) => {
+    voicePacket = (chunk) => {
+      if (chunk === null) resolve(player.finish());
+      else player.push(chunk);
+    };
+  });
+  try {
+    const fallback = await api.speakStream(text, tone);
+    if (fallback === null) await playback;
+    return fallback;
+  } finally {
+    voicePacket = undefined;
+    player.dispose();
+    analyser.disconnect();
+    analyser = undefined;
+  }
+}
+
+async function speak(text, tone, preview = false) {
+  speakingTone = ready.expressiveVoice ? validTone(tone) : undefined;
+  update('preparing');
+  try {
+    await unlockAudio();
+    if (preview && ready.voiceSamples) {
+      const response = await fetch(`/muestra-${tone}.wav`);
+      if (!response.ok) throw new Error('No se pudo abrir la muestra de voz.');
+      await play(new Uint8Array(await response.arrayBuffer()), speakingTone);
+    } else if (!preview && ready.voiceStream) {
+      const fallback = await playStream(text, tone);
+      if (fallback) await play(fallback, speakingTone);
+    } else {
+      await play(await api.speak(text, tone), speakingTone);
+    }
+  } finally {
+    speakingTone = undefined;
+  }
+}
+
 async function answer(text) {
   update('thinking');
-  addMessage('Tú', text);
+  const userText = addMessage('Tú', text);
   let reply;
   try {
     reply = await api.chat(text);
-    if (replyText) replyText.data = reply;
-    else addMessage('Asistente', reply);
+    if (replyText) replyText.data = reply.text;
+    else replyText = addMessage('Asistente', reply.text);
+    if (reply.memoryId && userText.parentElement && replyText.parentElement) {
+      userText.parentElement.dataset.memoryId = reply.memoryId;
+      replyText.parentElement.dataset.memoryId = reply.memoryId;
+    }
+    if (reply.memoryWarning) report(new Error(reply.memoryWarning));
   } finally {
     replyText = undefined;
   }
   if (voice.checked && ready.speak) {
-    update('preparing');
-    await unlockAudio();
-    await play(await api.speak(reply));
+    await speak(reply.text, reply.tone);
   }
+}
+
+for (const button of toneButtons) {
+  button.addEventListener('click', async () => {
+    if (state !== 'idle' || !ready.expressiveVoice) return;
+    const tone = validTone(button.dataset.tone);
+    try {
+      await speak(tones[tone].sample, tone, true);
+    } catch (error) {
+      report(error);
+    } finally {
+      update('idle');
+    }
+  });
 }
 
 api.onReplyChunk((chunk) => {
@@ -238,11 +325,14 @@ resetAvatar.addEventListener('click', async () => {
 async function initialize() {
   const [available, voiceEnabled, hasAvatar] = await Promise.all([api.ready(), api.getVoice(), api.hasAvatar()]);
   ready = available;
+  if (ready.memory) initializeMemoryPanel(api, messages);
+  else report(new Error('La memoria local no se pudo abrir. Este chat se recuerda mientras la ventana siga abierta.'));
   voice.disabled = !ready.speak;
   voice.checked = ready.speak && voiceEnabled;
+  voicePreview.hidden = !ready.expressiveVoice;
   update('idle');
   if (!ready.chat || !ready.transcribe || !ready.speak) {
-    const missing = Object.entries({ chat: 'Ollama/Qwen3', transcribe: 'Whisper', speak: 'Piper' })
+    const missing = Object.entries({ chat: 'Ollama/Qwen3', transcribe: 'Whisper', speak: 'motor de voz' })
       .filter(([key]) => !ready[key]).map(([, name]) => name);
     addMessage('Instalación', `Falta ${missing.join(', ')}. Consulta la guía de preparación.`);
   }

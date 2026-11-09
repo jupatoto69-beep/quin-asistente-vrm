@@ -1,11 +1,11 @@
-# Quin · v0.1.0
+# Quin · v0.2.0
 
-Mi primera prueba de Quin fue poner un avatar VRM en el escritorio y hablar con ella en español.
+Quin es mi asistente de escritorio para Windows con avatar VRM y conversación local en español.
 
-## La primera ventana de Quin
+## Voz expresiva y memoria local
 
-- Monté una ventana transparente y siempre visible. Se puede cambiar el VRM, mover la ventana y dejar pasar los clics al escritorio.
-- Conecté el chat a Qwen3 8B y probé el primer ciclo por voz con Whisper y Piper.
+- Elegí la voz Pícara y probé cómo mantener el timbre entre emociones. Pasé a Qwen3 4B Instruct y a audio por bloques para reducir la espera.
+- Guardé las conversaciones en SQLite y añadí una vista para buscar y borrar intercambios.
 
 ## Instalación
 
@@ -19,6 +19,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Preparar.ps1
 ```
 
 La preparación descarga los motores y los modelos. Después, el chat y el audio se procesan en el PC.
+
+La opción `-VozRapida` añade VoxGen para usar la voz Pícara.
 
 Esta versión pertenece al [historial reconstruido](CHANGELOG.md).
 

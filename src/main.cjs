@@ -1,9 +1,10 @@
 const { app, BrowserWindow, globalShortcut, ipcMain, net, protocol, screen, session } = require('electron');
-const { existsSync } = require('node:fs');
+const { existsSync, mkdirSync } = require('node:fs');
 const { join } = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createServices } = require('./services.cjs');
 const { createPreferences } = require('./preferences.cjs');
+const { tones } = require('./voice.cjs');
 
 const root = join(__dirname, '..');
 const origin = 'app://asistente';
@@ -15,6 +16,9 @@ const resources = new Map([
   ['/renderer.js', 'dist/renderer.js'],
   ['/avatar.vrm', 'assets/avatar.vrm'],
 ]);
+for (const tone of Object.keys(tones)) {
+  resources.set(`/muestra-${tone}.wav`, `.local/voice-preview/voz-joven-${tone}.wav`);
+}
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true },
@@ -24,6 +28,7 @@ const preferences = createPreferences(app.getPath('userData'));
 
 let window;
 let services;
+let memory;
 let passThrough = false;
 let busy = false;
 let micUntil = 0;
@@ -84,7 +89,14 @@ function validWav(value) {
 }
 
 async function createWindow() {
-  services = createServices(root);
+  try {
+    const profile = app.getPath('userData');
+    mkdirSync(profile, { recursive: true });
+    memory = require('./memory.cjs').createConversationMemory(join(profile, 'memoria.sqlite'));
+  } catch (error) {
+    console.warn('No se pudo iniciar la memoria local.', error.code);
+  }
+  services = createServices(root, memory);
   const work = screen.getPrimaryDisplay().workArea;
   const width = Math.min(408, work.width);
   const height = Math.min(730, work.height);
@@ -104,6 +116,16 @@ async function createWindow() {
   web.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.once('ready-to-show', () => window.show());
   await window.loadURL(page);
+}
+
+function requireMemory() {
+  if (!memory) throw new Error('La memoria local no está disponible.');
+  return memory;
+}
+
+function validMemoryId(id) {
+  if (!Number.isSafeInteger(id) || id < 1) throw new Error('Intercambio no válido.');
+  return id;
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -135,13 +157,32 @@ if (!app.requestSingleInstanceLock()) {
     addHandler('assistant:chat', (input, sender) => onlyOne(() => services.chat(validText(input, 1200), (chunk) => {
       if (!sender.isDestroyed()) sender.send('assistant:reply-chunk', chunk);
     })));
-    addHandler('assistant:speak', (input) => onlyOne(() => services.speak(validText(input, 2500))));
+    addHandler('assistant:speak', (input) => onlyOne(() => services.speak(validText(input?.text, 2500), input?.tone)));
+    addHandler('assistant:speak-stream', (input, sender) => onlyOne(async () => {
+      const result = await services.speakStream(validText(input?.text, 2500), input?.tone, (chunk) => {
+        if (!sender.isDestroyed()) sender.send('assistant:voice-chunk', chunk);
+      });
+      if (result === null && !sender.isDestroyed()) sender.send('assistant:voice-chunk', null);
+      return result;
+    }));
     addHandler('assistant:transcribe', (input) => onlyOne(() => services.transcribe(validWav(input))));
     addHandler('assistant:microphone', (requested) => {
       micUntil = requested === true && services.ready.transcribe ? Date.now() + 15_000 : 0;
     });
+    addHandler('memory:list', (input) => {
+      const query = input?.query;
+      if (typeof query !== 'string' || query.length > 120) throw new Error('Búsqueda no válida.');
+      const before = input.before == null ? null : validMemoryId(input.before);
+      return requireMemory().list(query.trim(), before);
+    });
+    addHandler('memory:remove', (id) => onlyOne(() => { requireMemory().remove(validMemoryId(id)); }));
+    addHandler('memory:clear', () => onlyOne(() => { requireMemory().clear(); }));
     addHandler('preferences:get-voice', preferences.getVoice);
-    addHandler('preferences:set-voice', preferences.setVoice);
+    addHandler('preferences:set-voice', async (enabled) => {
+      await preferences.setVoice(enabled);
+      if (enabled) services.warmConversation();
+      else if (!busy) services.releaseVoice();
+    });
     addHandler('preferences:has-avatar', () => existsSync(preferences.avatarPath));
     addHandler('preferences:save-avatar', preferences.saveAvatar);
     addHandler('preferences:reset-avatar', preferences.resetAvatar);
@@ -154,10 +195,15 @@ if (!app.requestSingleInstanceLock()) {
       return togglePassThrough();
     });
     await createWindow();
+    if (await preferences.getVoice()) services.warmConversation();
   }).catch((error) => {
     console.error(error);
     app.quit();
   });
   app.on('window-all-closed', () => app.quit());
-  app.on('will-quit', () => { globalShortcut.unregisterAll(); services?.stop(); });
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+    services?.stop();
+    memory?.close();
+  });
 }

@@ -10,6 +10,7 @@
 <body>
   <header class="titlebar">
     <strong>Asistente VRM</strong>
+    <button id="memory-open" type="button" disabled>Memoria</button>
     <button id="reset-avatar" type="button" title="Restaurar el avatar de muestra" hidden>Usar muestra</button>
     <button id="minimize" class="icon" aria-label="Minimizar" title="Minimizar">−</button>
     <button id="close" class="icon" aria-label="Cerrar" title="Cerrar">×</button>
@@ -37,7 +38,28 @@
       <input id="file" type="file" accept=".vrm" hidden>
       <button id="pass" type="button" title="Pulsa Ctrl+Alt+V para recuperar los clics">Dejar pasar clics</button>
     </div>
+    <details id="voice-preview" hidden>
+      <summary>Probar voz</summary>
+      <div id="voice-samples" class="voice-samples" aria-label="Muestras de voz"></div>
+    </details>
   </section>
+  <dialog id="memory-dialog" aria-labelledby="memory-title">
+    <header class="memory-header">
+      <h2 id="memory-title">Memoria</h2>
+      <form method="dialog"><button class="icon" aria-label="Cerrar memoria">×</button></form>
+    </header>
+    <p class="hint">Conversaciones guardadas en este PC.</p>
+    <form id="memory-search">
+      <input id="memory-query" type="search" maxlength="120" aria-label="Buscar en la memoria" placeholder="Busca por tema o palabra…">
+      <button>Buscar</button>
+    </form>
+    <p id="memory-status" role="status"></p>
+    <div id="memory-list" tabindex="0" aria-label="Conversaciones guardadas"></div>
+    <footer class="memory-actions">
+      <button id="memory-more" type="button" hidden>Ver más</button>
+      <button id="memory-clear" type="button">Borrar toda la memoria</button>
+    </footer>
+  </dialog>
   <script type="module" src="/renderer.js"></script>
 </body>
 </html>

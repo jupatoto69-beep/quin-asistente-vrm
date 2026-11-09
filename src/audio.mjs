@@ -53,3 +53,70 @@ export function record(stream, maxTime) {
   timer = setTimeout(stop, maxTime);
   return { stop, result };
 }
+
+export function createStreamPlayer(context, destination, onStart) {
+  const rate = 48000;
+  const sources = new Set();
+  let pending = [];
+  let frames = 0;
+  let next;
+  let resolveEnded;
+
+  function schedule(samples) {
+    const buffer = context.createBuffer(1, samples.length, rate);
+    buffer.copyToChannel(samples, 0);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(destination);
+    sources.add(source);
+    source.addEventListener('ended', () => {
+      source.disconnect();
+      sources.delete(source);
+      if (!sources.size) resolveEnded?.();
+    }, { once: true });
+    source.start(next);
+    next += buffer.duration;
+  }
+
+  function start() {
+    if (!frames) return;
+    next = context.currentTime + 0.035;
+    onStart();
+    for (const samples of pending) schedule(samples);
+    pending = [];
+    frames = 0;
+  }
+
+  function push(bytes) {
+    const samples = new Float32Array(bytes.slice().buffer);
+    if (next !== undefined && next >= context.currentTime + 0.005) {
+      schedule(samples);
+    } else {
+      next = undefined;
+      pending.push(samples);
+      frames += samples.length;
+      // Buffer a few patches before playback so network and inference jitter do not create gaps.
+      if (frames >= rate * 0.55) start();
+    }
+  }
+
+  function finish() {
+    start();
+    return new Promise((resolve) => {
+      if (!sources.size) resolve();
+      else resolveEnded = resolve;
+    });
+  }
+
+  function dispose() {
+    for (const source of sources) {
+      source.stop();
+      source.disconnect();
+    }
+    sources.clear();
+    pending = [];
+    resolveEnded?.();
+  }
+
+  return { push, finish, dispose };
+}

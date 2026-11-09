@@ -2,6 +2,15 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
+function armRig(upper, lower, defaultSide) {
+  if (!upper || !lower) return null;
+  // The normalized rig keeps the elbow offset from the model's original rest pose.
+  const { x, y } = lower.position;
+  const side = Math.abs(x) > 0.00001 ? Math.sign(x) : defaultSide;
+  const elevation = Math.atan2(y, Math.abs(x));
+  return { upper, lower, side, relaxed: side * (-1.18 - elevation) };
+}
+
 export function createAvatar(stage, activity, mouthLevel) {
   const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -61,9 +70,12 @@ export function createAvatar(stage, activity, mouthLevel) {
       joints.head.rotation.y += (pointerX * 0.20 - joints.head.rotation.y) * factor;
       joints.head.rotation.z = thinking ? 0.11 : Math.sin(time * 0.9) * 0.026;
     }
-    if (joints.leftUpperArm) joints.leftUpperArm.rotation.z = -1.18 + breath * 0.025;
-    if (joints.rightUpperArm) joints.rightUpperArm.rotation.z = 1.18 - breath * 0.025 - wave * 1.4;
-    if (joints.rightLowerArm) joints.rightLowerArm.rotation.z = -wave * (0.95 + Math.sin(waveTime * 18) * 0.25);
+    const { leftArm, rightArm } = joints;
+    if (leftArm) leftArm.upper.rotation.z = leftArm.relaxed + leftArm.side * breath * 0.025;
+    if (rightArm) {
+      rightArm.upper.rotation.z = rightArm.relaxed + rightArm.side * (breath * 0.025 + wave * 1.4);
+      rightArm.lower.rotation.z = rightArm.side * wave * (0.95 + Math.sin(waveTime * 18) * 0.25);
+    }
   }
 
   const manager = new THREE.LoadingManager();
@@ -83,9 +95,11 @@ export function createAvatar(stage, activity, mouthLevel) {
     }
     VRMUtils.rotateVRM0(next);
     const get = (name) => next.humanoid.getNormalizedBoneNode(name);
+    const leftSide = next.meta.metaVersion === '0' ? -1 : 1;
     const joints = {
       hips: get('hips'), chest: get('chest') ?? get('spine'), head: get('head'),
-      leftUpperArm: get('leftUpperArm'), rightUpperArm: get('rightUpperArm'), rightLowerArm: get('rightLowerArm'),
+      leftArm: armRig(get('leftUpperArm'), get('leftLowerArm'), leftSide),
+      rightArm: armRig(get('rightUpperArm'), get('rightLowerArm'), -leftSide),
     };
     pose(joints, 0, 'idle', 1);
     next.update(0);
@@ -103,6 +117,7 @@ export function createAvatar(stage, activity, mouthLevel) {
     anchor.position.copy(box.getCenter(new THREE.Vector3())).negate();
     avatar = next;
     bones = joints;
+    waveAt = -10;
     anchor.add(avatar.scene);
     width = size.x;
     height = size.y;

@@ -1,0 +1,12 @@
+{
+  "reference": "Keep the reference speaker's timbre and Latin American Spanish accent.",
+  "tones": {
+    "dulce": "Warm, soft and affectionate. A little smile and gentle pauses.",
+    "picara": "Playful, lightly teasing and witty. A brief pause before the punchline.",
+    "seria": "Calm, direct and matter-of-fact. Even pace and a clear emphasis on the key words.",
+    "feliz": "Genuinely delighted, smiling broadly, bright lively intonation and energized pacing.",
+    "triste": "Clearly sad and subdued, slightly breathy, slower with a small pause and a falling ending.",
+    "enojada": "Clearly irritated and firm, focused, clipped articulation and pointed emphasis, without shouting.",
+    "timida": "Shy and slightly nervous, quiet with gentle hesitations, a small pause and an uncertain rise."
+  }
+}
