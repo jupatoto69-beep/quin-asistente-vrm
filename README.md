@@ -1,11 +1,11 @@
-# Quin · v0.10.0
+# Quin · v0.11.0
 
 Quin es mi asistente de escritorio para Windows con avatar VRM y conversación local en español.
 
-## Modo compañía
+## Juegos de sobremesa
 
-- Añadí los ritmos Tranquila y Conversadora para las animaciones y las ocurrencias espontáneas.
-- El modo deja espacio mientras hay una conversación, un borrador o un panel abierto, y se pausa al minimizar.
+- Añadí Dos verdades y una mentira, dilemas absurdos, historias improvisadas por turnos y misterios cortos.
+- Quin celebra los aciertos con un gesto. Las partidas quedan separadas de la memoria personal.
 
 ## Instalación
 

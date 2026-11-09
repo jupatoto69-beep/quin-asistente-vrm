@@ -48,12 +48,27 @@
           <option value="chatty">Conversadora</option>
         </select>
       </label>
+      <button id="games-open" type="button" aria-haspopup="dialog" disabled>Juegos</button>
     </div>
     <details id="voice-preview" hidden>
       <summary>Probar voz</summary>
       <div id="voice-samples" class="voice-samples" aria-label="Muestras de voz"></div>
     </details>
   </section>
+  <dialog id="games-dialog" aria-labelledby="games-title">
+    <header class="memory-header">
+      <h2 id="games-title">Juegos con Quin</h2>
+      <form method="dialog"><button class="icon" aria-label="Cerrar juegos">×</button></form>
+    </header>
+    <p class="hint">Elige uno o di su nombre. Puedes jugar por texto o por voz.</p>
+    <div class="games-choices">
+      <button type="button" data-game="Dos verdades y una mentira">Dos verdades y una mentira</button>
+      <button type="button" data-game="Dilemas absurdos">Dilemas absurdos</button>
+      <button type="button" data-game="Historia por turnos">Historia por turnos</button>
+      <button type="button" data-game="Misterio corto">Misterio corto</button>
+      <button type="button" data-game="Termina el juego">Terminar juego</button>
+    </div>
+  </dialog>
   <dialog id="memory-dialog" aria-labelledby="memory-title">
     <header class="memory-header">
       <h2 id="memory-title">Memoria</h2>

@@ -18,6 +18,8 @@ const send = byId('send');
 const voice = byId('voice');
 const wake = byId('wake');
 const companionMode = byId('companion');
+const gamesOpen = byId('games-open');
+const gamesDialog = byId('games-dialog');
 const messages = byId('messages');
 const file = byId('file');
 const pick = byId('pick');
@@ -67,6 +69,7 @@ const companion = createCompanion();
 let companionInterval;
 let companionPrompt;
 let companionVisible = true;
+let gameActive = false;
 
 function canSend() {
   return ready.chat && (state === 'idle' || (state === 'listening' && pendingCorrection));
@@ -84,6 +87,7 @@ function update(next) {
   const canInterrupt = state === 'speaking' && activeSpeech && !activeSpeech.controller.signal.aborted;
   byId('status').textContent = label;
   send.disabled = !canSend();
+  gamesOpen.disabled = !canSend();
   mic.disabled = !canInterrupt && (!ready.chat || !ready.transcribe || !(wakeArmed || ['idle', 'listening'].includes(state)));
   mic.textContent = canInterrupt ? 'Interrumpir' : wakeArmed ? 'Terminar charla' : state === 'listening' ? 'Terminar' : 'Hablar';
   mic.setAttribute('aria-pressed', String(wakeArmed || state === 'listening'));
@@ -268,6 +272,7 @@ async function answer(text, request) {
       reply = await api.gestureResult(reply.actionId, performed);
       acted = true;
     }
+    if (typeof reply.gameActive === 'boolean') gameActive = reply.gameActive;
     if (replyText) replyText.data = reply.text;
     else replyText = addMessage('Quin', reply.text);
     replyRow = replyText.parentElement;
@@ -279,14 +284,18 @@ async function answer(text, request) {
   } finally {
     replyText = undefined;
   }
-  const cue = acted ? null : handCue(text, reply.text);
+  const cue = reply.celebrate ? { kind: 'thumb', side: 1 }
+    : acted || typeof reply.gameActive === 'boolean' ? null : handCue(text, reply.text);
   if (cue) avatar?.gesture(cue);
   return deliverReply(reply, replyRow);
 }
 
 async function deliverReply(reply, row, proactive = false) {
   if (voice.checked && ready.speak && (!proactive || reply.speaks)) {
-    const speech = activeSpeech = { controller: new AbortController(), text: reply.text, id: reply.memoryId, row, proactive };
+    const speech = activeSpeech = {
+      controller: new AbortController(), text: reply.text, id: reply.memoryId, row, proactive,
+      game: typeof reply.gameActive === 'boolean',
+    };
     try {
       await speak(reply.text, reply.tone, false, speech.controller.signal);
     } catch (error) {
@@ -305,7 +314,7 @@ async function deliverReply(reply, row, proactive = false) {
 }
 
 async function companionTick() {
-  const available = ready.chat && !!avatarId && state === 'idle' && !wakeArmed && !pendingCorrection &&
+  const available = ready.chat && !!avatarId && state === 'idle' && !wakeArmed && !pendingCorrection && !gameActive &&
     companionVisible && !document.hidden && !prompt.value.trim() &&
     !document.querySelector('dialog[open]') && !wakeListener?.isChecking();
   const line = companion.tick(performance.now(), available);
@@ -415,12 +424,13 @@ async function answerInput(text, listener) {
   const prefix = 'Mi mensaje anterior fue: ';
   const connector = '\nAñado o corrijo: ';
   const room = 1200 - prefix.length - connector.length - addition.length;
-  const request = pendingCorrection && room > 0 ? prefix + pendingCorrection.slice(0, room) + connector + addition : addition;
+  const request = typeof pendingCorrection === 'string' && room > 0
+    ? prefix + pendingCorrection.slice(0, room) + connector + addition : addition;
   pendingCorrection = undefined;
   try {
     const interrupted = await answer(addition, request);
     if (interrupted) {
-      pendingCorrection = request;
+      pendingCorrection = interrupted.game ? true : request;
       if (interrupted.addition) return answerInput(interrupted.addition, wakeListener);
       if (!wakeListener && ready.transcribe) {
         update('opening');
@@ -447,17 +457,29 @@ async function answerInput(text, listener) {
   else update('idle');
 }
 
-byId('chat').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const text = prompt.value.trim();
-  if (!text || !canSend()) return;
-  prompt.value = '';
+function submitText(text) {
   const listener = state === 'listening' ? wakeListener : undefined;
   if (listener) {
     listener.setEnabled(false);
     finishWakeWait();
   }
   void answerInput(text, listener);
+}
+
+byId('chat').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const text = prompt.value.trim();
+  if (!text || !canSend()) return;
+  prompt.value = '';
+  submitText(text);
+});
+
+gamesOpen.addEventListener('click', () => gamesDialog.showModal());
+gamesDialog.addEventListener('click', (event) => {
+  const game = event.target.closest('button[data-game]')?.dataset.game;
+  if (!game || !canSend()) return;
+  gamesDialog.close();
+  submitText(game);
 });
 
 async function preloadWakeReplies() {

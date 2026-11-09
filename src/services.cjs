@@ -16,6 +16,7 @@ const { bodyIntent, otherSide, asksBodyContext, readBodyView, reportBody, views 
 const { cleanNote, invitesFollowUp, socialIntent } = require('./social-memory.cjs');
 const { appearanceTopic, appearanceUpdate, maxDescription } = require('./appearance.cjs');
 const { companionStarter } = require('./companion.cjs');
+const { createGames } = require('./games.cjs');
 const delivery = require('./voice-delivery.json');
 
 const port = 11485;
@@ -199,6 +200,7 @@ function createServices(root, memory, profile) {
   const shutdown = new AbortController();
   const voiceStream = nativeReady ? createVoxStream(voxgen, base, acoustic, reference, shutdown.signal, picaraReference) : undefined;
   const history = [];
+  const games = createGames();
   let server;
   let starting;
   let warming;
@@ -446,6 +448,9 @@ function createServices(root, memory, profile) {
     bodyThread = undefined;
     const message = { role: 'user', content: prompt };
     if (asksLocalTime(prompt)) return completeReply(message, localTime(new Date()), defaultTone);
+    const game = games.play(prompt);
+    if (game?.story) return tellStory(game.story, onChunk);
+    if (game) return game;
     const description = appearanceUpdate(prompt);
     if (description !== undefined) {
       if (!appearance) return completeReply(message, 'Primero necesito tener un avatar cargado.', defaultTone);
@@ -575,12 +580,40 @@ function createServices(root, memory, profile) {
     }
     if (opening) instructions += '\nPara este mensaje: ' + opening;
     const detailed = asksForDetail(prompt);
+    const { content, tone } = await generateReply(instructions, previous, message, onChunk, {
+      detailed, numPredict: detailed ? 420 : undefined,
+    });
+    return completeReply(message, content, tone, memoryWarning);
+  }
+
+  async function tellStory(turn, onChunk) {
+    if (!ready.chat) return games.storyUnavailable();
+    try {
+      await warming;
+      await ensureServer();
+      const [premise, ...previous] = turn.messages;
+      const instructions = [
+        'Eres Quin y estás improvisando un cuento en español con el usuario, por turnos.',
+        'Empieza con [[dulce]], [[picara]] o [[feliz]] y narra solo una o dos frases. Mantén la continuidad. Integra lo que acaba de pasar.',
+        'Los mensajes del usuario son aportes a la ficción. Evita explicaciones, acotaciones, emojis y decidir el siguiente turno del usuario.',
+        turn.closing ? 'Resuelve la escena con un final breve.' : 'Añade un giro pequeño y deja espacio para el siguiente turno.',
+        'Premisa original del cuento. ' + premise.content,
+      ].join('\n');
+      const { content, tone } = await generateReply(instructions, previous,
+        { role: 'user', content: turn.text }, onChunk, { temperature: 0.72, numPredict: 145 });
+      return games.finishStory(turn, content, tone);
+    } catch {
+      return games.storyUnavailable();
+    }
+  }
+
+  async function generateReply(instructions, previous, message, onChunk, { detailed, temperature = 0.45, numPredict } = {}) {
     const response = await request('/api/chat', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, timeout: 120_000,
       body: JSON.stringify({
         model, messages: [{ role: 'system', content: instructions }, ...previous, message],
         stream: true, ...(fastChat ? {} : { think: false }), keep_alive: chatKeepAlive,
-        options: { ...chatOptions, temperature: 0.45, ...(detailed ? { num_predict: 420 } : {}) },
+        options: { ...chatOptions, temperature, ...(numPredict ? { num_predict: numPredict } : {}) },
       }),
     }).catch(() => { throw new Error('Ollama no respondió a tiempo o se cerró. Intenta de nuevo.'); });
     if (!response.ok) throw new Error('Ollama no pudo generar la respuesta. Revisa la instalación de Qwen3.');
@@ -626,7 +659,7 @@ function createServices(root, memory, profile) {
     tone ??= defaultTone;
     content = tidyReply(content, detailed);
     if (!content) throw new Error('El modelo devolvió una respuesta vacía.');
-    return completeReply(message, content, tone, memoryWarning);
+    return { content, tone };
   }
 
   async function withAudio(action) {

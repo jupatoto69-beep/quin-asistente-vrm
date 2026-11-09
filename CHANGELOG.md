@@ -2,6 +2,11 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.11.0 · Juegos de sobremesa
+
+- Añadí Dos verdades y una mentira, dilemas absurdos, historias improvisadas por turnos y misterios cortos.
+- Quin celebra los aciertos con un gesto. Las partidas quedan separadas de la memoria personal.
+
 ## v0.10.0 · Modo compañía
 
 - Añadí los ritmos Tranquila y Conversadora para las animaciones y las ocurrencias espontáneas.

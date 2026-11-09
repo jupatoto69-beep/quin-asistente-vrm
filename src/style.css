@@ -92,6 +92,8 @@ input[type="checkbox"] { accent-color: var(--accent); }
   border-radius: 6px;
   padding: 2px 4px;
 }
+#games-open { min-height: 25px; }
+.games-choices { display: grid; gap: 6px; }
 #voice-preview { margin-top: 8px; color: var(--muted); }
 #voice-preview summary { cursor: pointer; }
 .voice-samples { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
