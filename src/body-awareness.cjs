@@ -81,7 +81,7 @@ function readBodyView(view) {
     angle: view.angle,
     visible: Object.keys(regions).filter((part) => Array.isArray(view.visible) && view.visible.includes(part)),
     raisedFoot: ['left', 'right'].includes(view.raisedFoot) ? view.raisedFoot : undefined,
-    posture: ['standing', 'crouched'].includes(view.posture) ? view.posture : undefined,
+    posture: ['standing', 'crouched', 'seated'].includes(view.posture) ? view.posture : undefined,
   };
 }
 
@@ -99,6 +99,7 @@ function reportBody(topic, view, lastGesture, lastLeg) {
       return topic === 'support' ? `Me apoyo en el pie ${left ? 'derecho' : 'izquierdo'}.`
         : `Tengo el pie ${left ? 'izquierdo' : 'derecho'} levantado.`;
     }
+    if (view.posture === 'seated') return 'Estoy sentada en mi puff, con los pies apoyados.';
     if (view.posture === 'crouched') return 'Estoy un poco agachada.';
     if (view.posture === 'standing') return 'Estoy de pie, con ambos pies apoyados.';
     return 'El esqueleto de este avatar no me da una postura fiable de las piernas.';

@@ -25,6 +25,7 @@
     <div class="status-row">
       <span class="indicator" aria-hidden="true"></span>
       <span id="status" role="status">Iniciando…</span>
+      <label class="voice" title="Busca en Internet cuando la pregunta necesita datos recientes o fuentes"><input id="web" type="checkbox" disabled> Web</label>
       <label class="voice"><input id="voice" type="checkbox" checked disabled> Voz</label>
     </div>
     <div id="messages" role="log" aria-label="Mensajes">
@@ -41,21 +42,42 @@
       <button id="pass" type="button" title="Pulsa Ctrl+Alt+V para recuperar los clics">Dejar pasar clics</button>
     </div>
     <div class="conversation-options">
-      <label class="wake-toggle"><input id="wake" type="checkbox" disabled> Activación por voz</label>
+      <label class="wake-toggle" title="Puedes decir Hola Quin, Buenas Quin, Oye Quin o Hey Quin"><input id="wake" type="checkbox" disabled> Activación por voz</label>
       <label class="companion-control">Compañía
         <select id="companion" disabled>
           <option value="off">Desactivada</option>
           <option value="quiet">Tranquila</option>
           <option value="chatty">Conversadora</option>
+          <option value="gaming">En partida</option>
         </select>
       </label>
       <button id="games-open" type="button" aria-haspopup="dialog" disabled>Juegos</button>
+      <button id="pending-open" type="button" aria-haspopup="dialog" disabled>Pendientes</button>
+      <button id="files-open" type="button" aria-haspopup="dialog">Archivos</button>
+      <button id="temporary-end" type="button" hidden>Terminar charla temporal</button>
     </div>
     <details id="voice-preview" hidden>
       <summary>Probar voz</summary>
       <div id="voice-samples" class="voice-samples" aria-label="Muestras de voz"></div>
     </details>
   </section>
+  <dialog id="pending-dialog" aria-labelledby="pending-title">
+    <header class="memory-header">
+      <h2 id="pending-title">Pendientes</h2>
+      <form method="dialog"><button class="icon" aria-label="Cerrar pendientes">×</button></form>
+    </header>
+    <p id="pending-status" class="hint" role="status"></p>
+    <div id="pending-list"></div>
+  </dialog>
+  <dialog id="files-dialog" aria-labelledby="files-title">
+    <header class="memory-header">
+      <h2 id="files-title">Archivos</h2>
+      <form method="dialog"><button class="icon" aria-label="Cerrar archivos">×</button></form>
+    </header>
+    <p id="files-status" class="hint" role="status"></p>
+    <div id="file-folders"></div>
+    <button id="files-add" type="button">Añadir carpeta</button>
+  </dialog>
   <dialog id="vision-dialog" aria-labelledby="vision-title">
     <header class="memory-header">
       <h2 id="vision-title">Quin, mira esto</h2>
@@ -81,6 +103,13 @@
     </form>
     <p id="vision-status" class="hint" role="status"></p>
     <output id="vision-result" aria-live="polite"></output>
+    <div id="vision-guide" hidden>
+      <p id="vision-step" aria-live="polite"></p>
+      <div class="vision-row">
+        <button id="vision-prev" type="button">Anterior</button>
+        <button id="vision-next" type="button">Siguiente</button>
+      </div>
+    </div>
   </dialog>
   <dialog id="games-dialog" aria-labelledby="games-title">
     <header class="memory-header">
@@ -101,9 +130,11 @@
       <h2 id="memory-title">Memoria</h2>
       <form method="dialog"><button class="icon" aria-label="Cerrar memoria">×</button></form>
     </header>
-    <p class="hint">Conversaciones guardadas en este PC.</p>
+    <p class="hint">Conversaciones y datos guardados en este PC.</p>
     <select id="memory-kind" aria-label="Tipo de recuerdo">
       <option value="">Todas las conversaciones</option>
+      <option value="facts">Datos personales</option>
+      <option value="moment">Momentos</option>
       <option value="story">Historias pendientes</option>
       <option value="joke">Chistes internos</option>
     </select>
@@ -111,10 +142,31 @@
       <input id="memory-query" type="search" maxlength="120" aria-label="Buscar en la memoria" placeholder="Busca por tema o palabra…">
       <button>Buscar</button>
     </form>
+    <div id="memory-fact-actions" class="memory-actions" hidden>
+      <button id="memory-fact-add" type="button">Añadir dato</button>
+      <button id="memory-profile" type="button">Abrir perfil</button>
+    </div>
+    <form id="memory-fact-editor" hidden>
+      <label>Categoría
+        <select id="memory-fact-category">
+          <option value="gusto">Gustos</option>
+          <option value="persona">Personas</option>
+          <option value="proyecto">Proyectos</option>
+          <option value="otro">Otros</option>
+        </select>
+      </label>
+      <label>Tema <input id="memory-fact-label" maxlength="80" required placeholder="Comida favorita"></label>
+      <label>Dato <textarea id="memory-fact-value" maxlength="500" rows="2" required></textarea></label>
+      <div class="memory-actions">
+        <button id="memory-fact-cancel" type="button">Cancelar</button>
+        <button class="primary" type="submit">Guardar dato</button>
+      </div>
+    </form>
     <p id="memory-status" role="status"></p>
     <div id="memory-list" tabindex="0" aria-label="Conversaciones guardadas"></div>
     <footer class="memory-actions">
       <button id="memory-more" type="button" hidden>Ver más</button>
+      <button id="memory-temporary" type="button">Charla temporal</button>
       <button id="memory-clear" type="button">Borrar toda la memoria</button>
     </footer>
   </dialog>

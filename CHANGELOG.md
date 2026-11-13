@@ -2,6 +2,14 @@
 
 Historial reconstruido a partir de las copias de cada etapa. Las versiones siguen el orden en el que incorporé las funciones.
 
+## v0.13.0 · Memoria, pendientes y acciones de escritorio
+
+- Añadí fichas personales editables, recuerdos aprendidos en la conversación y charla temporal. Quin puede retomar planes y reaccionar cuando le cuento cómo me siento.
+- Añadí notas y recordatorios persistentes, temporizadores, apertura de aplicaciones, controles de reproducción y volumen y búsqueda de archivos en carpetas elegidas.
+- Incorporé la búsqueda web con seguimiento del tema y enlaces, la captura de pantalla con una orden de voz y la guía visual por pasos.
+- Mejoré las poses y los gestos del avatar, añadí **En partida** y amplié los saludos de activación. Las respuestas de voz largas se reproducen por bloques para evitar cortes.
+- Añadí el icono uwu de Quin a la ventana de Windows y dejé sus archivos PNG e ICO en `assets`.
+
 ## v0.12.0 · Mira esto
 
 - Añadí un selector de pantalla o ventana para que Quin pueda comentar un recorte que le muestro.

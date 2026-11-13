@@ -1,4 +1,5 @@
 const { desktopCapturer, screen } = require('electron');
+const { captureWindowsFrame } = require('./windows-desktop.cjs');
 
 function createScreenCapture(getWindow, origin) {
   let panel;
@@ -21,8 +22,28 @@ function createScreenCapture(getWindow, origin) {
     } else if (!open && panel) {
       const previous = panel;
       panel = undefined;
+      previous.quick?.abort();
       window.setBounds(previous.bounds);
       window.setContentProtection(previous.protected);
+    }
+  }
+
+  async function quickFrame() {
+    const current = panel;
+    if (!current || current.quick) throw new Error('Di «Mira mi pantalla» para iniciar una nueva captura.');
+    const window = getWindow();
+    const display = screen.getDisplayMatching(current.bounds);
+    const bounds = screen.dipToScreenRect(null, display.bounds);
+    const job = current.quick = new AbortController();
+    const visible = window.isVisible();
+    const abort = () => job.abort();
+    window.once('closed', abort);
+    if (visible) window.hide();
+    try {
+      return await captureWindowsFrame(bounds, job.signal);
+    } finally {
+      window.removeListener('closed', abort);
+      if (visible && !window.isDestroyed()) window.show();
     }
   }
 
@@ -63,7 +84,7 @@ function createScreenCapture(getWindow, origin) {
     });
   }
 
-  return { attach, setOpen, sources, authorize, permitted, isOpen: () => !!panel };
+  return { attach, setOpen, sources, authorize, permitted, quickFrame, isOpen: () => !!panel };
 }
 
 module.exports = { createScreenCapture };

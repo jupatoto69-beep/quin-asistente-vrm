@@ -9,6 +9,11 @@ const format = {
   required: ['text', 'box'],
   additionalProperties: false,
 };
+const guideFormat = {
+  ...format,
+  properties: { ...format.properties, steps: { type: 'array', maxItems: 4, items: { ...format } } },
+  required: [...format.required, 'steps'],
+};
 
 function validImage(value) {
   if (!(value instanceof Uint8Array) || value.length < 32 || value.length > 4_000_000 ||
@@ -23,6 +28,10 @@ function wantsBox(question) {
   return /(?:\b(?:marc[ae]|ubic[ae]|resalta|d[oó]nde)\b|\bseñ[aá]l)/iu.test(question);
 }
 
+function wantsGuide(question) {
+  return /\b(?:gu[ií]ame|paso a paso|qu[eé] pasos|c[oó]mo (?:arreglo|soluciono|corrijo|configuro|resuelvo)|ay[uú]dame a (?:arreglar|solucionar|configurar))\b/iu.test(question);
+}
+
 function validBox(value) {
   if (!Array.isArray(value) || value.length !== 4 ||
       !value.every((point) => Number.isInteger(point) && point >= 0 && point <= 1000)) return;
@@ -31,4 +40,4 @@ function validBox(value) {
   return value;
 }
 
-module.exports = { visionModel, visionTag, format, validImage, wantsBox, validBox };
+module.exports = { visionModel, visionTag, format, guideFormat, validImage, wantsBox, wantsGuide, validBox };

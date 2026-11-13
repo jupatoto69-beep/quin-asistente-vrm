@@ -6,6 +6,8 @@ import { createLimbReach, applyReach, clearTorso } from './avatar-reach.mjs';
 import { capturePlants, legRig, plantFeet } from './avatar-support.mjs';
 import { aimHand, fingerRig, reachHandGesture, relaxFingers, shapeHand } from './avatar-hands.mjs';
 import { createIdlePlayer, loadIdleClips } from './avatar-idle.mjs';
+import { poseActingHands } from './avatar-acting-rig.mjs';
+import { createActingProps } from './avatar-acting-props.mjs';
 
 function armRig(get, name, defaultSide) {
   const upper = get(name + 'UpperArm');
@@ -19,7 +21,7 @@ function armRig(get, name, defaultSide) {
   return {
     upper, lower, hand, side, relaxed: side * (-1.38 - elevation),
     reach: createLimbReach(upper, lower, hand), fingers: fingerRig(get, name),
-    upperAngles: new THREE.Vector3(), lowerAngles: new THREE.Vector3(), wrist: 0, curl: 0,
+    upperAngles: new THREE.Vector3(), lowerAngles: new THREE.Vector3(), wrist: 0, curl: 0, actingWeight: 0,
   };
 }
 
@@ -65,10 +67,12 @@ function applyPose(joints, p, blend, dt = 0, time = 0, resolveAim) {
     joints.hipShift += (p.hipShift - joints.hipShift) * blend;
     joints.hipDrop += (0.024 + p.hipDrop - joints.hipDrop) * blend;
     joints.hipDepth += (p.hipDepth - joints.hipDepth) * blend;
+    joints.seated = p.seat > 0.66 && joints.hipDrop > 0.34;
     hips.position.set(hipRest.x + axis * joints.hipShift * legLength,
       hipRest.y - joints.hipDrop * legLength, hipRest.z + axis * joints.hipDepth * legLength);
     footMoved = plantFeet(joints.legs, p, blend);
   }
+  poseActingHands(joints, p, blend);
   const sameReach = p.reach && (joints.reachWeight < 0.04 ||
     (p.reach.kind === joints.reach?.kind && p.reach.side === joints.reach?.side &&
       p.reach.target === joints.reach?.target && p.reach.direction === joints.reach?.direction));
@@ -112,6 +116,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   const anchor = new THREE.Group();
   const gaze = new THREE.Object3D();
   scene.add(anchor, gaze, new THREE.HemisphereLight(0xffffff, 0x9091ab, 2.2));
+  const props = createActingProps(scene);
   const key = new THREE.DirectionalLight(0xfff2e6, 2);
   key.position.set(2, 3, 4);
   scene.add(key);
@@ -125,6 +130,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   let yaw = 0;
   let zoom = 1;
   const viewCenter = new THREE.Vector2();
+  let closeupHipY;
   let orbitPointer;
   let suppressTap = false;
   let avatar;
@@ -136,6 +142,10 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   let motion = createMotion();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const expressions = ['happy', 'sad', 'angry', 'surprised', 'relaxed'];
+  let faceNames = {};
+  let splitBlink = false;
+  let heldEyes = 0;
+  let heldWink = 0;
   let cursorPending = false;
   let nextCursor = 0;
   let last = performance.now();
@@ -170,18 +180,24 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
     const halfHeight = fittedHalfHeight / zoom;
     const limitX = Math.max(0, fittedHalfWidth - halfWidth);
     const limitY = Math.max(0, fittedHalfHeight - halfHeight);
+    const shift = closeupHipY === undefined ? 0 : bones.hips.getWorldPosition(bodyPoint).y - closeupHipY;
     viewCenter.x = THREE.MathUtils.clamp(viewCenter.x, -limitX, limitX);
-    viewCenter.y = THREE.MathUtils.clamp(viewCenter.y, -limitY, limitY);
+    const centerY = THREE.MathUtils.clamp(viewCenter.y + shift, -limitY, limitY);
     camera.left = viewCenter.x - halfWidth;
     camera.right = viewCenter.x + halfWidth;
-    camera.top = viewCenter.y + halfHeight;
-    camera.bottom = viewCenter.y - halfHeight;
+    camera.top = centerY + halfHeight;
+    camera.bottom = centerY - halfHeight;
     camera.updateProjectionMatrix();
+  }
+
+  function followCloseup(enabled) {
+    closeupHipY = enabled ? bones.hips?.getWorldPosition(bodyPoint).y : undefined;
   }
 
   function resetView() {
     yaw = 0;
     zoom = 1;
+    followCloseup(false);
     viewCenter.set(0, 0);
     orientCamera();
     updateProjection();
@@ -208,7 +224,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
       angle: front >= 0.71 ? 'front' : front <= -0.71 ? 'back' : 'side',
       visible,
       raisedFoot: raised?.side,
-      posture: bones.legs.length === 2 ? bones.hipDrop > 0.075 ? 'crouched' : 'standing' : undefined,
+      posture: bones.legs.length === 2 ? bones.seated ? 'seated' : bones.hipDrop > 0.075 ? 'crouched' : 'standing' : undefined,
     };
   }
 
@@ -242,6 +258,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
       1, 3,
     );
     bounds.getCenter(viewCenter);
+    followCloseup(view === 'face');
     updateProjection();
     return true;
   }
@@ -287,6 +304,11 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
       throw new Error('El archivo no contiene un avatar VRM.');
     }
     VRMUtils.rotateVRM0(next);
+    // Cached mesh bounds describe the standing pose. A close-up can otherwise
+    // discard the face while the animated head has moved into view.
+    next.scene.traverse((object) => {
+      if (object.isSkinnedMesh) object.frustumCulled = false;
+    });
     const get = (name) => next.humanoid.getNormalizedBoneNode(name);
     const leftSide = next.meta.metaVersion === '0' ? -1 : 1;
     const hips = get('hips');
@@ -320,6 +342,11 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
     anchor.position.copy(box.getCenter(new THREE.Vector3())).negate();
     avatar = next;
     bones = joints;
+    const face = avatar.expressionManager;
+    faceNames = Object.fromEntries(expressions.map((name) => [name,
+      face?.getValue(name) != null ? name : name === 'surprised' && face?.getValue('Surprised') != null ? 'Surprised' : null]));
+    splitBlink = face?.getValue('blinkLeft') != null && face.getValue('blinkRight') != null;
+    heldEyes = heldWink = 0;
     motion = createMotion();
     seconds = 0;
     lastPointerMove = -10;
@@ -341,6 +368,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
     joints.idle = createIdlePlayer(avatar, await idleClips, controlled);
     width = Math.hypot(size.x, size.z);
     height = size.y;
+    props.configure(joints, box.min.y + anchor.position.y, height);
     distance = Math.max(6, size.length());
     camera.far = Math.max(50, distance * 3);
     gaze.position.set(0, height * 0.40, 2.1 * height);
@@ -386,8 +414,14 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
     if (next === zoom) return;
     const delta = 1 / zoom - 1 / next;
     viewCenter.x += ((event.clientX - box.left) / Math.max(1, box.width) * 2 - 1) * fittedHalfWidth * delta;
-    viewCenter.y += (1 - (event.clientY - box.top) / Math.max(1, box.height) * 2) * fittedHalfHeight * delta;
+    const halfHeight = fittedHalfHeight / next;
+    const verticalLimit = Math.max(0, fittedHalfHeight - halfHeight);
+    const cursorY = 1 - (event.clientY - box.top) / Math.max(1, box.height) * 2;
+    viewCenter.y = THREE.MathUtils.clamp((camera.top + camera.bottom) / 2 + cursorY * fittedHalfHeight * delta,
+      -verticalLimit, verticalLimit);
     zoom = next;
+    const face = bones.landmarks.face && placeBodyPoint('face');
+    followCloseup(zoom >= 1.55 && face && Math.abs(face.y - viewCenter.y) <= halfHeight);
     updateProjection();
   }, { passive: false });
   canvas.addEventListener('keydown', (event) => {
@@ -414,27 +448,43 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
         if (point) aimAt(point.x * window.innerWidth, point.y * window.innerHeight);
       }).catch(() => {}).finally(() => { cursorPending = false; });
     }
-    const { state, tone, reaction, companion } = activity();
+    const { state, tone, reaction, companion, actingState, cue } = activity();
     const focus = Math.max(0, aimTarget.normal.z) *
       (1 - 0.72 * THREE.MathUtils.clamp((seconds - lastPointerMove - 1.2) / 2, 0, 1));
     const p = motion.step(seconds, dt, state, tone, reaction, mouthLevel(), {
       x: pointer.x * focus, y: pointer.y * focus,
-    }, reducedMotion.matches, companion);
+    }, reducedMotion.matches, companion, actingState, cue);
     const blend = 1 - Math.exp(-dt * 9);
     const reached = applyPose(bones, p, blend, dt, seconds, resolveAim);
+    if (closeupHipY !== undefined) updateProjection();
     gaze.position.x += (p.gazeX * height * 0.62 - gaze.position.x) * blend;
     gaze.position.y += ((0.40 - p.gazeY * 0.42) * height - gaze.position.y) * blend;
     const blinkTime = seconds - nextBlink;
     const blink = blinkTime >= 0 && blinkTime < 0.16 ? Math.sin(blinkTime / 0.16 * Math.PI) : 0;
     if (blinkTime > 0.16) nextBlink = seconds + 2.1 + Math.random() * 3.7;
     const face = avatar.expressionManager;
+    const talking = state === 'speaking';
+    const happyTalk = talking && p.face === 'happy' &&
+      (tone === 'feliz' || p.acting === 'happy' || p.acting === 'celebrate');
+    // The happy morph already opens the jaw on some VRMs. Leave room for the viseme.
+    const expression = happyTalk ? Math.min(p.expression, 0.42) : p.expression;
     for (const name of expressions) {
-      const weight = face?.getValue(name);
-      if (weight != null) face.setValue(name, weight + ((name === p.face ? p.expression : 0) - weight) * blend);
+      const key = faceNames[name];
+      if (!key) continue;
+      const weight = face.getValue(key);
+      face.setValue(key, weight + ((name === p.face ? expression : 0) - weight) * blend);
     }
-    face?.setValue('blink', blink);
-    face?.setValue('aa', p.mouth);
+    heldEyes += (p.eyes - heldEyes) * blend;
+    heldWink += (p.wink - heldWink) * blend;
+    const closed = Math.max(blink, heldEyes);
+    if (splitBlink) {
+      face.setValue('blinkLeft', Math.max(closed, -heldWink));
+      face.setValue('blinkRight', Math.max(closed, heldWink));
+    } else face?.setValue('blink', closed);
+    const mouth = happyTalk ? 0.29 * Math.tanh(p.mouth / 0.42) : p.mouth;
+    face?.setValue('aa', Math.max(mouth, p.expressionMouth * (talking ? 0.23 : 1)));
     avatar.update(dt);
+    props.update(p, bones, height, seconds, blend, aimTarget.normal.z);
     renderer.render(scene, camera);
     motion.rendered(reached);
   });
@@ -484,7 +534,7 @@ export function createAvatar(stage, activity, mouthLevel, getPointer, getTarget)
   }
 
   return {
-    load, capabilities, reply: (tone, reaction) => motion.reply(tone, reaction), observeBody,
+    load, capabilities, reply: (tone, reaction, cue) => motion.reply(tone, reaction, cue), observeBody,
     async gesture(cue) {
       if (cue.kind === 'view') return showBody(cue.view);
       if (cue.kind !== 'sequence') return perform(cue, false);

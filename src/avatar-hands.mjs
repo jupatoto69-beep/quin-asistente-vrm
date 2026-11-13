@@ -55,11 +55,14 @@ export function shapeHand(arm, kind, strength, phase = 0) {
   if (!arm || strength < 0.001) return;
   for (const finger of arm.fingers) {
     const { name, segment } = finger;
-    const extended = kind === 'point' && name === 'Index' || kind === 'thumb' && name === 'Thumb';
+    const extended = (kind === 'point' || kind === 'consider') && name === 'Index' || kind === 'thumb' && name === 'Thumb';
     const curl = extended ? 0.015 : kind === 'open' ? (0.15 + finger.digit * 0.025) * finger.curl
+      : kind === 'splayed' ? 0.09 * finger.curl
+      : kind === 'soft' || kind === 'cup' ? (kind === 'cup' ? 0.58 : 0.37) * finger.curl
       : kind === 'wiggle' ? (0.32 + 0.23 * Math.sin(phase * Math.PI * 6 - finger.digit * 0.9)) * finger.curl
       : name === 'Thumb' ? thumbCurl[segment] : closedCurl[segment];
-    const spread = kind === 'open' && segment === 0 && name !== 'Thumb' ? arm.side * (finger.digit - 1.5) * 0.066 : 0;
+    const spread = (kind === 'open' || kind === 'splayed') && segment === 0 && name !== 'Thumb'
+      ? arm.side * (finger.digit - 1.5) * (kind === 'splayed' ? 0.14 : 0.066) : 0;
     pose.copy(extended ? finger.straighten : identity)
       .multiply(splay.setFromAxisAngle(finger.palm, spread))
       .multiply(flex.setFromAxisAngle(finger.axis, curl));

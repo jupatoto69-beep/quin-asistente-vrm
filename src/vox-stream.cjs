@@ -1,6 +1,7 @@
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
 const { setTimeout: delay } = require('node:timers/promises');
+const { voiceStepLimit } = require('./voice.cjs');
 
 const host = '127.0.0.1';
 const wavHeaderBytes = 44;
@@ -108,7 +109,7 @@ function createVoxStream(executable, base, acoustic, reference, shutdown, altern
     try {
       const response = await request(url, '/v1/audio/speech/stream', {
         input: text, control, reference_audio_path: sample,
-        seed: 306, gain: 0.6, inference_timesteps: 6, max_steps: 200,
+        seed: 306, gain: 0.6, inference_timesteps: 6, max_steps: voiceStepLimit(text),
       }, 75_000, signal);
       if (!response.ok || !response.body) throw new Error('VoxGen no pudo iniciar el audio.');
       let buffered = Buffer.alloc(0);

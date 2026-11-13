@@ -1,4 +1,5 @@
 import { dance, moveBody, strengthFor } from './avatar-body-moves.mjs';
+import { createActing } from './avatar-acting.mjs';
 
 const idleGestures = ['hair', 'stretch', 'weightShift', 'glance', 'curiosity', 'oops'];
 const idleStyles = {
@@ -7,7 +8,7 @@ const idleStyles = {
   chatty: { gestures: [...idleGestures, 'ponder', 'wave'], wait: 2.4, variation: 2, strength: 1 },
 };
 const tapGestures = ['wave', 'hair', 'curiosity', 'oops'];
-const thinkingStates = new Set(['transcribing', 'thinking', 'responding', 'preparing', 'looking']);
+const thinkingStates = new Set(['transcribing', 'thinking', 'responding', 'preparing', 'looking', 'searching']);
 const reachingGestures = new Set(['point', 'thumb', 'raise', 'hair', 'stretch', 'leg', 'arm', 'dance']);
 
 const stances = [
@@ -189,11 +190,13 @@ export function restPose() {
     leftLift: 0, rightLift: 0, leftBend: 0, rightBend: 0, leftForward: 0, rightForward: 0,
     leftElbow: 0, rightElbow: 0, leftWrist: 0, rightWrist: 0, leftCurl: 0, rightCurl: 0,
     face: 'happy', expression: 0, gazeX: 0, gazeY: 0, mouth: 0,
-    idleBlend: 0, armGesture: 0, reduced: false,
+    eyes: 0, wink: 0, expressionMouth: 0, seat: 0, plush: 0,
+    idleBlend: 0, talkBlend: 0, armGesture: 0, reduced: false,
   };
 }
 
 export function createMotion(random = Math.random) {
+  const acting = createActing(random);
   let time = 0;
   let mode;
   let since = 0;
@@ -240,7 +243,7 @@ export function createMotion(random = Math.random) {
     return idleStyle.wait + random() * idleStyle.variation;
   }
 
-  function step(now, dt, state, tone, reaction, level, pointer, reduced, companion = 'off') {
+  function step(now, dt, state, tone, reaction, level, pointer, reduced, companion = 'off', actingState = state, actingCue) {
     time = now;
     const style = idleStyles[companion] ?? idleStyles.off;
     if (idleStyle !== style) {
@@ -267,7 +270,8 @@ export function createMotion(random = Math.random) {
     const activeTone = mode === 'reply' ? silentReply.tone : tone;
     const mood = delivery[activeTone] ?? delivery.dulce;
     const cue = mode === 'reply' ? silentReply.reaction : reaction;
-    if (handPending && (engaged || mode === 'idle')) {
+    const shot = acting.step(now, actingState, actingCue, !!(active?.requested || handPending), companion);
+    if (handPending && shot?.name !== 'bored' && (engaged || mode === 'idle')) {
       start(handPending.kind);
       active.requested = true;
       active.target = handPending.target;
@@ -278,14 +282,19 @@ export function createMotion(random = Math.random) {
       nextMove = now + gestures[active.name].duration + 1.3;
       handPending = undefined;
     }
+    if (shot && active && !active.requested) clearGesture();
     if (tapPending) {
       if (mode === 'idle' && !active?.requested) {
-        choose(tapGestures);
-        nextMove = now + gestures[active.name].duration + 1.8;
+        acting.resetIdle(now);
+        if (shot) acting.request('attentive');
+        else {
+          choose(tapGestures);
+          nextMove = now + gestures[active.name].duration + 1.8;
+        }
       }
       tapPending = false;
     }
-    if (!active && now >= nextMove) {
+    if (!shot && !active && now >= nextMove) {
       if (mode === 'idle') {
         chooseIdle();
         nextMove = now + gestures[active.name].duration + (idleStyle === idleStyles.off ? 3.0 + random() * 3.0 : idleDelay());
@@ -359,6 +368,8 @@ export function createMotion(random = Math.random) {
       p.mouth = voiceBeat;
       p.headX += voiceBeat * mood.beat;
       p.rightLift += voiceBeat * mood.beat;
+      p.talkBlend = mode === 'speaking' && !active?.requested
+        ? (activeTone === 'seria' ? 0.17 : 0.37) * (0.46 + Math.min(1, voiceBeat * 1.65) * 0.54) : 0;
     }
     if (active) {
       const gesture = gestures[active.name];
@@ -369,6 +380,7 @@ export function createMotion(random = Math.random) {
       if (gesture.arms) p.armGesture = amount;
       gesture.move(p, amount, phase, active.side, active.target, active.plan);
     }
+    if (!active?.requested) acting.apply(p, now, shot);
     return p;
   }
 
@@ -396,9 +408,10 @@ export function createMotion(random = Math.random) {
         if (!active.waitEnd) active.finish(true);
       }
     },
-    reply(tone, reaction) {
+    reply(tone, reaction, cue) {
       silentReply = { tone, reaction };
       replyUntil = time + 1.65;
+      if (cue) acting.request(cue);
     },
   };
 }

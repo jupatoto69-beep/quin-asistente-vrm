@@ -4,11 +4,14 @@ Quería tener un personaje anime en mi escritorio y hablarle en español. Empec�
 
 ## Qué puedo hacer con ella
 
-- Escribirle o usar el micrófono. Con **Activación por voz** puedo decir «Oye, Quin» y seguir la charla sin repetir el nombre. Si se me quedó algo por decir, puedo pulsar **Interrumpir**.
-- Cargar mi propio VRM, girarlo con el ratón y acercarlo con la rueda. Puedo pedir «Levanta el pie izquierdo» y seguir con «Ahora el otro».
-- Guardar conversaciones, chistes e historias pendientes. **Memoria** permite buscar o borrar turnos. **Perfil** sirve para decidir qué datos quiero darle.
-- Elegir **Tranquila** o **Conversadora** en Compañía, o empezar una partida desde **Juegos**.
-- Usar **Mira esto** para compartir un recorte de una ventana o pantalla. Quin puede comentarlo o señalar algo en la vista previa.
+- Escribirle o usar el micrófono. Con **Activación por voz** puedo decir «Hola, Quin», «Buenas, Quin», «Oye, Quin» o «Hey, Quin» y seguir la charla sin repetir el nombre. Si se me quedó algo por decir, puedo pulsar **Interrumpir**.
+- Cargar mi propio VRM, girarlo con el ratón y acercarlo con la rueda. Puedo pedir «Levanta el pie izquierdo» y seguir con «Ahora el otro». El avatar también reacciona al tono y cambia de postura durante la espera.
+- Abrir **Memoria** para ver las conversaciones, las fichas personales, los momentos, los chistes y las historias pendientes. Quin puede aprender datos de la charla. Puedo editar las fichas, quitar recuerdos o activar **Charla temporal**.
+- Decir «Anota que quiero probar ese juego», «Mañana a las diez recuérdame regar las plantas» o «¿Qué tengo pendiente?». La lista se conserva al cerrar la app y los recordatorios vencidos aparecen al volver a abrirla.
+- Poner temporizadores, abrir Calculadora, controlar el volumen y pausar la reproducción. En **Archivos** elijo dónde puede buscar para pedidos como «Búscame la captura de ayer».
+- Elegir **Tranquila**, **Conversadora** o **En partida**. «Acompáñame mientras juego» activa el último modo. «Dame un rato» pausa las ocurrencias.
+- Usar **Mira esto** para confirmar un recorte, o decir «Mira mi pantalla» para analizar una captura del monitor donde está Quin. Puedo pedir «Guíame paso a paso» y recorrer las marcas de la vista previa.
+- Activar **Web** para preguntas que necesitan datos recientes. Quin anuncia la búsqueda y muestra los enlaces con la respuesta.
 
 ### Dos cosas para probar
 
@@ -42,12 +45,12 @@ Probé el proyecto con una RTX 4070 Ti SUPER de 16 GB y 32 GB de RAM. El modelo 
 - **Ventana y avatar.** Electron, Three.js y three-vrm. El render mueve el esqueleto y las expresiones del VRM cargado.
 - **Diálogo.** Qwen3 4B Instruct en Ollama. El texto se muestra por bloques y el historial se guarda en SQLite.
 - **Voz.** Whisper.cpp convierte el audio a texto. Para hablar, Quin usa VoxGen y VoxCPM2 cuando están instalados, con Kokoro y Piper como opciones locales.
-- **Visión.** Qwen3-VL 4B Instruct recibe solo el recorte confirmado. Las marcas son aproximadas.
+- **Visión.** Qwen3-VL 4B Instruct analiza el recorte confirmado o la captura pedida por voz. Las marcas son aproximadas.
 
-Ollama escucha en `127.0.0.1:11485` con las funciones de nube desactivadas. El perfil, la memoria y el avatar elegido se guardan en `.local/profile`. El selector de pantalla toma una captura puntual, detiene la transmisión y libera la imagen al cerrar. Las respuestas de visión no pasan al historial persistente.
+Ollama escucha en `127.0.0.1:11485` con las funciones de nube desactivadas. El perfil, la memoria y el avatar elegido se guardan en `.local/profile`. Las capturas se mantienen en memoria hasta cerrar la vista y las respuestas de visión quedan fuera del historial persistente. **Web** envía consultas de búsqueda a Internet cuando está activada. La charla temporal pausa esa opción.
 
 ## Versiones
 
-Organicé el avance en doce versiones. Reconstruí los commits con copias del proyecto que quedaron durante las pruebas. Las fechas de Git corresponden a esa reconstrucción. El [registro de cambios](CHANGELOG.md) cuenta qué había en cada etapa.
+Reconstruí las primeras doce versiones con copias que quedaron durante las pruebas. La v0.13.0 reúne los cambios que hice después de incorporar «Mira esto». El [registro de cambios](CHANGELOG.md) cuenta qué añadí en cada etapa.
 
 [Créditos y licencias de los recursos](CREDITOS.md)

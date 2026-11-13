@@ -18,6 +18,7 @@ async function replaceFile(path, value) {
 function createPreferences(directory) {
   const voicePath = join(directory, 'voz.json');
   const companionPath = join(directory, 'compania.json');
+  const webPath = join(directory, 'web.json');
   const avatarPath = join(directory, 'avatar-personal.vrm');
 
   async function getVoice() {
@@ -31,6 +32,19 @@ function createPreferences(directory) {
   async function setVoice(enabled) {
     if (typeof enabled !== 'boolean') throw new Error('La preferencia de voz no es válida.');
     await replaceFile(voicePath, JSON.stringify(enabled));
+  }
+
+  async function getWeb() {
+    try {
+      return JSON.parse(await readFile(webPath, 'utf8')) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function setWeb(enabled) {
+    if (typeof enabled !== 'boolean') throw new Error('La preferencia de búsqueda no es válida.');
+    await replaceFile(webPath, JSON.stringify(enabled));
   }
 
   async function getCompanion() {
@@ -58,7 +72,7 @@ function createPreferences(directory) {
     await replaceFile(avatarPath, bytes);
   }
 
-  return { avatarPath, getVoice, setVoice, getCompanion, setCompanion, saveAvatar, resetAvatar: () => rm(avatarPath, { force: true }) };
+  return { avatarPath, getVoice, setVoice, getWeb, setWeb, getCompanion, setCompanion, saveAvatar, resetAvatar: () => rm(avatarPath, { force: true }) };
 }
 
 module.exports = { createPreferences, replaceFile };

@@ -3,11 +3,10 @@ import { wakeWav } from './audio.mjs';
 const silenceMs = 9000;
 const speechGraceMs = 27_000; // One 12 s clip plus the local decoder's timeout.
 const endConversation = /^\s*[¿¡]?(?:quin[\s,]+)?(?:(deja de escuchar(?:me)?)|termina la charla)(?:[,\s]+quin)?(?:[,\s]+por favor)?[.?!…\s]*$/iu;
-const interruptCue = /\b(?:esper[aá]|d[eé]jame terminar|me falt[oó] algo)\b/iu;
 const interruptStart = /^[¿¡\s]*(?:(?:oye|hey)[,\s]+)?(?:(?:quinn?|queen|kin|kim|keane)[,\s]+)?(?:esper[aá](?: un (?:segundo|momento))?|d[eé]jame terminar|me falt[oó] algo)(?=$|[\s,.!?;:…])/iu;
 
 export function containsInterruption(text) {
-  return interruptCue.test(text);
+  return text.split(/(?<=[.!?…])\s+|\n+/u).some((sentence) => readInterruption(sentence) !== null);
 }
 
 export function readInterruption(text) {

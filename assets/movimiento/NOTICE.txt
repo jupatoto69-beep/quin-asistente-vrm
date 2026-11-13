@@ -6,8 +6,10 @@ Copyright (c) 2019-2021, Vircadia contributors.
 Copyright (c) 2022-2026, Overte e.V.
 
 Original animation source: https://github.com/overte-org/overte
-Original files: interface/resources/avatar/animations/idle.fbx and idle03.fbx.
-The bundled idle.vrma and idle-3.vrma are Hanami conversions of those files.
+Original files: interface/resources/avatar/animations/idle.fbx, idle03.fbx,
+idle02.fbx, talk_lefthand.fbx and talk_righthand.fbx.
+The bundled idle.vrma, idle-3.vrma, idle-4.vrma, idle-talking-6.vrma and
+idle-talking-7.vrma are Hanami conversions of those files, respectively.
 Hanami retargeted them to the VRM humanoid rig, selected loop ranges, and resampled them.
 Source revision: https://github.com/Undi95/Hanami/tree/5cf4afaac1ad8499d0890101a7c93762bf1dc8b0/vrma
 Conversion notice: https://github.com/Undi95/Hanami/blob/5cf4afaac1ad8499d0890101a7c93762bf1dc8b0/vrma/NOTICE.md

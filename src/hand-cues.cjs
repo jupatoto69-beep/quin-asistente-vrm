@@ -79,6 +79,23 @@ function mightRequestGesture(request) {
     /\b(?:pulgar|dedos?|deditos?|manos?|brazos?|pies?|piernas?|rodillas?|cabello|pelo|cabeza|torso|cadera|cintura|hombros|gestos?|senas?|saludo|cursor|boton|izquierda|derecha|arriba|abajo|estiramiento|baile|baila|coreografia|sentadilla)\b/.test(user);
 }
 
+function mixedGestureRequest(request) {
+  const text = request.trim().replace(/^(?:(?:(?:oye|olle|hey)[,\s]+)?quin[,\s]+)?primero[,\s]+/iu, '');
+  const separators = /(?:\s*[,;.!?]\s*(?:y\s+)?(?:luego|despu[eé]s)[,\s]+|\s*[,;]\s*|\s+(?:y\s+)?(?:luego|despu[eé]s)[,\s]+|\s+y\s+)/giu;
+  const parts = /^(?:(?:me )?(?:puedes|podr[ií]as) )?(?:cu[aá]nt[oa]|qu[eé]|cu[aá]l|c[oó]mo|d[oó]nde|cu[aá]ndo|qui[eé]n|dime|cu[eé]ntame|calcula|explica|resume|responde|lee|busca|investiga|averigua|escribe|enumera|traduce)\b/iu;
+  const quotes = [...text.matchAll(/«[^»]*»|“[^”]*”|"[^"\n]*"|\x60[^\x60\n]*\x60/gu)];
+  for (const match of text.matchAll(separators)) {
+    if (quotes.some((quote) => match.index >= quote.index && match.index < quote.index + quote[0].length)) continue;
+    const before = text.slice(0, match.index).trim();
+    const after = text.slice(match.index + match[0].length).trim();
+    for (const [movement, question, gestureFirst] of [[before, after, true], [after, before, false]]) {
+      if (!parts.test(question.replace(/^[¿¡]/u, ''))) continue;
+      const cue = requestedHandCue(movement);
+      if (cue || mightRequestGesture(movement)) return { movement, question, cue, gestureFirst };
+    }
+  }
+}
+
 function asksAboutBody(request) {
   return /^(?:tienes (?:un )?cuerpo(?: virtual)?|que puedes hacer con tu cuerpo|que movimientos puedes hacer(?: con tu cuerpo)?|que gestos puedes hacer)$/.test(bodyRequest(request));
 }
@@ -90,5 +107,5 @@ function handCue(request, reply) {
   return null;
 }
 
-module.exports = { requestedHandCue, handCue, decodeGesture, mightRequestGesture, asksAboutBody, bodyRequest,
+module.exports = { requestedHandCue, handCue, decodeGesture, mightRequestGesture, mixedGestureRequest, asksAboutBody, bodyRequest,
   gestureKinds, gestureTargets: [...targets, 'izquierdo', 'derecho'] };

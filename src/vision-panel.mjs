@@ -1,6 +1,8 @@
 export function visionCommand(text) {
   const match = /^\s*[¿¡]?(?:(?:(?:oye|olle|hey)[,.!:\s]+)?(?:quin[n]?|queen|kin|kim|keane)[,.!:\s]+)?[¿¡]?mira\s+(?:esto|(?:mi|la) pantalla)(?=$|[\s,.!?:…])(.*)$/isu.exec(text);
-  return match?.[1].replace(/^[\s,.!?:…]+/u, '').trim();
+  if (match) return match[1].replace(/^[\s,.!?:…]+/u, '').trim();
+  const guide = /^\s*[¿¡]?(?:(?:(?:oye|olle|hey)[,.!:\s]+)?quin[,.!:\s]+)?(gu[ií]ame (?:en (?:esta|mi|la) pantalla|sobre este recorte)(?:[,.!?:…\s]+.*)?)$/isu.exec(text);
+  return guide?.[1];
 }
 
 function stopStream(stream) {
@@ -28,7 +30,7 @@ async function grabFrame(stream) {
   }
 }
 
-export function createVisionPanel(api, { available, onOpen, onClose, analyze }) {
+export function createVisionPanel(api, { available, onOpen, onClose, analyze, onPoint, onStep }) {
   const byId = (id) => document.getElementById(id);
   const dialog = byId('vision-dialog');
   const source = byId('vision-source');
@@ -43,6 +45,10 @@ export function createVisionPanel(api, { available, onOpen, onClose, analyze }) 
   const submit = byId('vision-analyze');
   const status = byId('vision-status');
   const result = byId('vision-result');
+  const guide = byId('vision-guide');
+  const stepText = byId('vision-step');
+  const previous = byId('vision-prev');
+  const next = byId('vision-next');
   let epoch = 0;
   let busy = false;
   let stream;
@@ -50,6 +56,9 @@ export function createVisionPanel(api, { available, onOpen, onClose, analyze }) 
   let confirmed;
   let drag;
   let selection;
+  let mark;
+  let steps = [];
+  let stepIndex = 0;
 
   function sync() {
     refresh.disabled = busy || !available();
@@ -58,15 +67,28 @@ export function createVisionPanel(api, { available, onOpen, onClose, analyze }) 
     crop.disabled = busy || !selection || selection.width < 24 || selection.height < 24;
     full.disabled = busy;
     submit.disabled = busy;
+    previous.disabled = busy || stepIndex === 0;
+    next.disabled = busy || stepIndex >= steps.length - 1;
+  }
+
+  function resetGuide() {
+    mark = undefined;
+    steps = [];
+    stepIndex = 0;
+    guide.hidden = true;
+    document.body.classList.remove('vision-guiding');
+    dialog.classList.remove('guiding');
   }
 
   function clearImage() {
     frame?.close();
+    confirmed?.image.close?.();
     frame = confirmed = drag = selection = undefined;
     canvas.width = canvas.height = 1;
     canvas.classList.remove('selecting');
     canvas.parentElement.hidden = controls.hidden = form.hidden = true;
     result.textContent = '';
+    resetGuide();
   }
 
   function draw(box) {
@@ -88,6 +110,51 @@ export function createVisionPanel(api, { available, onOpen, onClose, analyze }) 
         (right - left) * canvas.width, (bottom - top) * canvas.height);
     }
   }
+
+  function showMark(box) {
+    mark = box;
+    const guiding = !!mark || steps.length > 0;
+    document.body.classList.toggle('vision-guiding', guiding);
+    dialog.classList.toggle('guiding', guiding);
+    draw(mark);
+    if (mark) {
+      const revision = epoch;
+      requestAnimationFrame(() => { if (current(revision) && mark === box) onPoint(); });
+    }
+  }
+
+  function pointPosition() {
+    if (!dialog.open || !mark) return;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
+    const x = (mark[0] + mark[2]) / 2000;
+    const y = (mark[1] + mark[3]) / 2000;
+    return { x: rect.left + rect.width / 2 + (x - 0.5) * canvas.width * scale,
+      y: rect.top + rect.height / 2 + (y - 0.5) * canvas.height * scale };
+  }
+
+  function showStep() {
+    const step = steps[stepIndex];
+    stepText.textContent = `Paso ${stepIndex + 1} de ${steps.length}. ${step.text}`;
+    showMark(step.box);
+    status.textContent = step.box ? 'Marca aproximada sobre el recorte.' : 'Sigue el paso indicado.';
+    return step.text;
+  }
+
+  async function changeStep(offset) {
+    if (busy || !steps[stepIndex + offset]) return;
+    const revision = epoch;
+    busy = true;
+    stepIndex += offset;
+    sync();
+    try { await onStep(showStep(), stepText); }
+    catch (error) { if (current(revision)) showError(error); }
+    finally { if (current(revision)) { busy = false; sync(); } }
+  }
+
+  previous.addEventListener('click', () => changeStep(-1));
+  next.addEventListener('click', () => changeStep(1));
 
   function showImage(image) {
     canvas.width = image.width;
@@ -118,7 +185,7 @@ export function createVisionPanel(api, { available, onOpen, onClose, analyze }) 
     }
   }
 
-  async function open(text = '') {
+  async function open(text = '', command) {
     if (dialog.open) return;
     const revision = ++epoch;
     clearImage();
@@ -131,8 +198,20 @@ export function createVisionPanel(api, { available, onOpen, onClose, analyze }) 
     try {
       await api.visionPanel(true);
       if (!current(revision)) return;
-      if (available()) await listSources();
-      else status.textContent = 'Instala el modelo local con scripts\\Preparar-Vision.ps1 y vuelve a abrir Quin.';
+      if (!available()) {
+        status.textContent = 'Instala el modelo local con scripts\\Preparar-Vision.ps1 y vuelve a abrir Quin.';
+      } else if (command) {
+        status.textContent = 'Capturando tu pantalla…';
+        const jpeg = await api.captureScreen(command);
+        if (!current(revision)) return;
+        const blob = new Blob([jpeg], { type: 'image/jpeg' });
+        const image = await createImageBitmap(blob);
+        if (!current(revision)) { image.close(); return; }
+        confirmed = { image, blob, fullScreen: true };
+        showImage(image);
+        form.hidden = false;
+        await analyzeConfirmed(revision);
+      } else await listSources();
     } catch (error) {
       if (current(revision)) showError(error);
     } finally {
@@ -238,25 +317,39 @@ export function createVisionPanel(api, { available, onOpen, onClose, analyze }) 
   full.addEventListener('click', () => frame && confirm({ x: 0, y: 0, width: frame.width, height: frame.height }));
   refresh.addEventListener('click', listSources);
   source.addEventListener('change', () => { clearImage(); sync(); });
+  async function analyzeConfirmed(revision) {
+    result.textContent = '';
+    resetGuide();
+    draw();
+    const screen = confirmed.fullScreen;
+    status.textContent = screen ? 'Quin está mirando la captura…' : 'Quin está mirando el recorte…';
+    const image = new Uint8Array(await confirmed.blob.arrayBuffer());
+    if (!current(revision)) return;
+    const request = question.value.trim() || (screen ? '¿Qué ves en esta captura de mi pantalla?' : '¿Qué ves en este recorte?');
+    await analyze(request, image, (answer) => {
+      if (!current(revision)) return false;
+      result.textContent = answer.text;
+      steps = answer.steps ?? [];
+      if (steps.length) {
+        guide.hidden = false;
+        showStep();
+      } else {
+        showMark(answer.box);
+        status.textContent = answer.box ? `Marca aproximada sobre ${screen ? 'la captura' : 'el recorte'}.`
+          : `Listo. Puedes preguntar algo más sobre ${screen ? 'esta captura' : 'este recorte'}.`;
+      }
+      return true;
+    });
+  }
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (busy || !confirmed) return;
     const revision = epoch;
     busy = true;
     sync();
-    result.textContent = '';
-    draw();
-    status.textContent = 'Quin está mirando el recorte…';
     try {
-      const image = new Uint8Array(await confirmed.blob.arrayBuffer());
-      if (!current(revision)) return;
-      await analyze(question.value.trim() || '¿Qué ves en este recorte?', image, (answer) => {
-        if (!current(revision)) return false;
-        result.textContent = answer.text;
-        draw(answer.box);
-        status.textContent = answer.box ? 'Marca aproximada sobre el recorte.' : 'Listo. Puedes preguntar algo más sobre este recorte.';
-        return true;
-      });
+      await analyzeConfirmed(revision);
     } catch (error) {
       if (current(revision)) showError(error);
     } finally {
@@ -271,5 +364,5 @@ export function createVisionPanel(api, { available, onOpen, onClose, analyze }) 
     api.visionPanel(false).catch(showError);
     onClose();
   });
-  return { open };
+  return { open, pointPosition };
 }

@@ -6,3 +6,5 @@ dist/
 .env
 .env.*
 __pycache__/
+*.lnk
+*.ps1.user

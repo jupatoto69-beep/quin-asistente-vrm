@@ -10,6 +10,12 @@ const sample = {
   clothes: 'Llevo una camiseta blanca holgada, shorts negros y tenis oscuros con suela clara.',
 };
 const fields = ['summary', 'hair', 'eyes', 'clothes', 'accessories'];
+const traits = {
+  hair: { words: /\b(?:pelo|cabello|flequillo)\b/iu, missing: 'cómo es mi pelo' },
+  eyes: { words: /\b(?:ojos|iris)\b/iu, missing: 'cómo son mis ojos' },
+  clothes: { words: /\b(?:ropa|atuendo|vestid[oa]|camiseta|blusa|pantal[oó]n|falda|shorts|tenis|botas|chaqueta|abrigo)\b/iu, missing: 'qué ropa llevo' },
+  accessories: { words: /\b(?:accesorios?|gargantilla|collar|curita|aretes?|pendientes?|gafas|lentes)\b/iu, missing: 'qué accesorios llevo' },
+};
 const maxDescription = 500;
 const validAvatarId = (id) => typeof id === 'string' && /^[a-f0-9]{64}$/u.test(id);
 
@@ -52,7 +58,7 @@ function appearanceTopic(message) {
     .replace(/(?: porfa(?:vor)?| por favor| quin)$/u, '');
   if (/^(?:como te ves(?: por fuera| desde (?:afuera|fuera)| hoy| ahora)?|como luces(?: hoy| ahora)?|como eres fisicamente|como es tu cuerpo|cual es tu (?:apariencia|aspecto)|describe(?:me)? tu (?:apariencia|aspecto|avatar|cuerpo)|describete(?: fisicamente)?|que aspecto tienes)$/u.test(question)) return 'summary';
   if (/^(?:(?:de )?que color (?:es|tienes) (?:tu |el )?|como (?:es|tienes) (?:tu |el )?|(?:tu |el )?)(?:pelo|cabello)$/u.test(question)) return 'hair';
-  if (/^(?:(?:de )?que color (?:son|tienes) (?:tus |los )?|como (?:son|tienes) (?:tus |los )?|(?:tus |los )?)ojos$/u.test(question)) return 'eyes';
+  if (/^(?:(?:de )?que color (?:(?:son|tienes)(?: en)? )?|color de |como (?:son|tienes) )?(?:tus |los )?ojos$/u.test(question)) return 'eyes';
   if (/^(?:que (?:ropa|atuendo) (?:llevas|tienes)(?: puest[oa])?|que (?:llevas|tienes) puest[oa]|como (?:vas vestida|estas vestida|te vistes|es tu ropa)|describe(?:me)? tu (?:ropa|atuendo))$/u.test(question)) return 'clothes';
   if (/^(?:que accesorios (?:llevas|tienes|usas)|(?:que|como es tu) gargantilla(?: llevas)?|que (?:es eso que )?tienes (?:en la mejilla|debajo del ojo))$/u.test(question)) return 'accessories';
   if (/\b(?:te ves|tu (?:apariencia|aspecto|atuendo|ropa|pelo|cabello|gargantilla)|tus (?:ojos|accesorios)|que (?:llevas|tienes) puest[oa]|vas vestida|tienes (?:una curita|flequillo|el pelo|el cabello|los ojos))\b/u.test(question)) return 'context';
@@ -63,4 +69,14 @@ function appearanceUpdate(text) {
   return match ? match[1].trim() : undefined;
 }
 
-module.exports = { createAppearanceCatalog, appearanceTopic, appearanceUpdate, maxDescription };
+function describeAppearance(look, topic) {
+  if (look[topic]) return look[topic];
+  const trait = traits[topic];
+  const parts = look.summary.split(/(?<=[.!?])\s+|[;\n]+|,\s+|\s+y\s+(?=(?:tengo|llevo|uso|mis|mi|ojos|pelo|cabello|ropa)\b)/iu);
+  const descriptions = parts.map((part) => part.trim()).filter((part) => trait.words.test(part));
+  return descriptions.length ? descriptions.map((text) =>
+    text[0].toUpperCase() + text.slice(1) + (/[.!?]$/u.test(text) ? '' : '.')).join(' ')
+    : 'Todavía no tengo registrado ' + trait.missing + ' en este avatar.';
+}
+
+module.exports = { createAppearanceCatalog, appearanceTopic, appearanceUpdate, describeAppearance, maxDescription };

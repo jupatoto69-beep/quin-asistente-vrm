@@ -33,6 +33,7 @@ const defaultTone = 'dulce';
 const liveSamples = new Set(['dulce', 'picara', 'seria']);
 const softVoiceTones = new Set(['dulce', 'picara']);
 const wakePhrases = ['dime', 'si', 'te-escucho', 'aja'];
+const searchPhrases = ['espera', 'revisar', 'investigar'];
 
 function validTone(value) {
   return typeof value === 'string' && Object.hasOwn(tones, value) ? value : defaultTone;
@@ -63,7 +64,17 @@ function withoutEmoji(text) {
 
 function speechText(text, tone) {
   let spoken = withoutEmoji(text)
-    .replace(/^(Es la|Son las) ([1-9]|1[0-2]):([0-5]\d) ([AP]M)\.$/u, (_, prefix, hour, minutes, period) =>
+    .replace(/^[ \t]*\[[^\]\n]+\]:[ \t]*\S+[^\n]*$/gmu, '')
+    .replace(/!?\[([^\]\n]+)\]\((?:[^()\n]|\([^()\n]*\))*\)/gu, '$1')
+    .replace(/\[([^\]\n]+)\]\[[^\]\n]*\]/gu, '$1')
+    .replace(/<?(?:https?:\/\/|www\.)[^\s<>«»"]+>?/giu, (url) => /[.!?,;:]$/u.exec(url)?.[0] ?? '')
+    .replace(/^[ \t]*~~~[^\n]*$|^[ \t]*\x60{3,}[^\n]*$/gmu, '')
+    .replace(/^[ \t]*\|?[ \t]*:?-{2,}:?(?:[ \t]*\|[ \t]*:?-{2,}:?)+[ \t]*\|?[ \t]*$/gmu, '')
+    .replace(/^[ \t]{0,3}(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+)/gmu, '')
+    .replace(/(\*\*|__|~~|\x60+)(\S(?:[^\n]*?\S)?)\1/gu, '$2')
+    .replace(/(^|[\s(])([*_])(\S(?:[^\n]*?\S)?)\2(?=$|[\s.,!?;:)])/gmu, '$1$3')
+    .replace(/^[ \t]*\|([^\n]*?)\|[ \t]*$/gmu, (_, row) => row.split('|').map((cell) => cell.trim()).filter(Boolean).join(', '))
+    .replace(/^((?:En [^,\n]+?,? )?(?:es la|son las)) ([1-9]|1[0-2]):([0-5]\d) ([AP]M)\.$/iu, (_, prefix, hour, minutes, period) =>
       prefix + ' ' + (hour === '1' ? 'una' : clockNumbers[Number(hour)]) + spokenMinute(minutes) + (period === 'AM' ? ', a eme.' : ', pe eme.'))
     .replace(laugh, (_, vowel) => `J${vowel.toLowerCase()}, j${vowel.toLowerCase()}`)
     .replace(/[ \t]+/g, ' ').replace(/ +([,.!?;:…])/g, '$1').trim();
@@ -81,4 +92,40 @@ function speechReaction(text) {
   if (cue) return cue === 'ah' ? 'surprise' : 'sigh';
 }
 
-module.exports = { tones, defaultTone, liveSamples, softVoiceTones, wakePhrases, validTone, withoutEmoji, speechText, speechReaction };
+const sentenceBreaks = new Intl.Segmenter('es', { granularity: 'sentence' });
+const speechPartLimit = 200;
+const maxVoiceText = 16_000;
+
+function speechParts(text) {
+  if (!text) return [];
+  if (text.length <= speechPartLimit) return [text];
+  const parts = [];
+  let pending = '';
+  for (const { segment } of sentenceBreaks.segment(text)) {
+    let sentence = segment.trim();
+    if (!sentence) continue;
+    if (pending && pending.length + sentence.length + 1 > speechPartLimit) {
+      parts.push(pending);
+      pending = '';
+    }
+    while (sentence.length > speechPartLimit) {
+      const prefix = sentence.slice(0, speechPartLimit + 1);
+      const clause = [...prefix.matchAll(/[,;:…](?=\s)/gu)].at(-1)?.index ?? 0;
+      const space = prefix.search(/\s\S*$/u);
+      let end = clause >= speechPartLimit / 2 ? clause + 1 : space > 0 ? space : speechPartLimit;
+      if (/^[\uDC00-\uDFFF]/u.test(sentence.slice(end))) end--;
+      parts.push(sentence.slice(0, end).trimEnd());
+      sentence = sentence.slice(end).trimStart();
+    }
+    if (sentence) pending = pending ? pending + ' ' + sentence : sentence;
+  }
+  if (pending) parts.push(pending);
+  return parts;
+}
+
+function voiceStepLimit(text) {
+  return text.length > 180 ? 256 : 200;
+}
+
+module.exports = { tones, defaultTone, liveSamples, softVoiceTones, wakePhrases, searchPhrases, validTone, withoutEmoji,
+  speechText, speechReaction, speechParts, maxVoiceText, voiceStepLimit };
